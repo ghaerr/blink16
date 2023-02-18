@@ -1,6 +1,6 @@
 # Blink16
 
-This is an 8086 real mode only version of Blink, useful
+This is an 8086 real mode only branch of [Blink](https://github.com/jart/blink), useful
 for emulating [ELKS](https://github.com/jbruchon/elks) and MSDOS
 executable programs. This is an early work in progress, with
 Blink's x86_64 VM replaced with a tiny
@@ -23,8 +23,12 @@ cd blink16
 ./blink16 banner ELKS   # ELKS binary
 ./blink16 test.exe      # DOS binary
 ```
+Screenshot of Blink16 running 'banner':
 ![Screenshot of Blink16 running banner](blink16/blink16-banner.png)
 
+A big thank you to @jart for the wonderful Blink Project!!
+
+Screenshot of Blink running GCC 9.4.0:
 ![Screenshot of Blink running GCC 9.4.0](blink/blink-gcc.png)
 
 [![Test Status](https://github.com/jart/blink/actions/workflows/build.yml/badge.svg)](https://github.com/jart/blink/actions/workflows/build.yml)
