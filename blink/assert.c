@@ -30,6 +30,10 @@
 #include "blink/util.h"
 
 void AssertFailed(const char *file, int line, const char *msg) {
+#if BLINK16
+    WriteErrorString("ABORT\n");
+    fprintf(stderr, "%s:%d: assertion failed: %s (%s)\n", file, line, msg, strerror(errno));
+#else
   _Thread_local static bool noreentry;
   char b[512];
   snprintf(b, sizeof(b), "%s:%d: assertion failed: %s (%s)\n", file, line, msg,
@@ -44,5 +48,6 @@ void AssertFailed(const char *file, int line, const char *msg) {
     WriteErrorString("\n");
   }
   PrintBacktrace();
+#endif
   Abort();
 }

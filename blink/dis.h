@@ -10,9 +10,14 @@
 #define DIS_MAX_SYMBOL_LENGTH 128
 
 struct DisOp {
+#if BLINK16
+  u16 cs;
+  u16 ip;
+#else
   i64 addr;
-  u8 size;
   bool active;
+#endif
+  u8 size;
   char *s;
 };
 
@@ -60,7 +65,7 @@ struct DisEdges {
 
 struct Dis {
   bool notab;
-  bool noraw;
+  int noraw;
   struct DisOps ops;
   struct DisLoads loads;
   struct DisSyms syms;
