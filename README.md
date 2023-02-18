@@ -3,9 +3,10 @@
 This is an 8086 real mode only version of Blink, useful
 for emulating [ELKS](https://github.com/jbruchon/elks) and MSDOS
 executable programs. This is an early work in progress, with
-Blink's x86_64 VM replaced with a tiny [8086 emulator and disassembler]
-(https://github.com/ghaerr/86sim). The system calls are also replaced
-for ELKS and DOS support, with currently just a few syscalls implemented.
+Blink's x86_64 VM replaced with a tiny
+[8086 emulator and disassembler](https://github.com/ghaerr/86sim).
+The system calls are also replaced for ELKS and DOS support,
+with currently just a few syscalls implemented.
 
 The Blink16 branch is implemented in the blink16/ directory, using portions
 of Blink from the original blink/ directory and master branch.
@@ -22,7 +23,7 @@ cd blink16
 ./blink16 banner ELKS   # ELKS binary
 ./blink16 test.exe      # DOS binary
 ```
-![Screenshot of Blink16 running banner])blink16/blink16-banner.png)
+![Screenshot of Blink16 running banner](blink16/blink16-banner.png)
 
 ![Screenshot of Blink running GCC 9.4.0](blink/blink-gcc.png)
 
