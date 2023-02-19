@@ -118,9 +118,9 @@ long Dis(struct Dis *d, struct Machine *m, i64 addr, i64 ip, int lines)
 long DisFind(struct Dis *d, i64 addr)
 {
     int i;
-    addr -= cs() << 4; // FIXME remove
+    addr -= cs() << 4;
     for (i=0; i<d->ops.i; i++) {
-        if (d->ops.p[i].ip == addr && d->ops.p[i].cs == cs()) {
+        if (!d->ops.p[i].s && d->ops.p[i].ip == addr && d->ops.p[i].cs == cs()) {
             d->m->xedd->length = d->ops.p[i].size;
             return i;
         }
@@ -153,10 +153,10 @@ static void copyRegisters(struct Machine *m)
     Put16(m->di, di());
     Put16(m->sp, sp());
     Put16(m->bp, bp());
-    m->cs.sel = cs();
-    m->ds.sel = ds();
-    m->ss.sel = ss();
-    m->es.sel = es();
+    m->cs.base = (m->cs.sel = cs()) << 4;
+    m->ss.base = (m->ss.sel = ss()) << 4;
+    m->ds.base = (m->ds.sel = ds()) << 4;
+    m->es.base = (m->es.sel = es()) << 4;
     m->flags = getFlags();
 }
 
@@ -174,7 +174,7 @@ void LoadProgram(struct Machine *m, char *prog, char **args, char **vars)
     sym_read_exe_symbols(&exe8086, prog);
     copyRegisters(m);
     exe8086.textseg = cs();
-    m->cs.sel = cs();
+    m->cs.base = (m->cs.sel = cs()) << 4;
     m->ip = getIP();
     m->system->codestart = m->ip;
     m->system->codesize = sbuf.st_size - exe8086.aout.hlen;
@@ -191,14 +191,14 @@ struct System *NewSystem(void)
 
 _Thread_local struct Machine *g_machine;
 
-struct Machine m;    // FIXME
-
 struct Machine *NewMachine(struct System *system, struct Machine *parent)
 {
+    static struct Machine m;
     static struct XedDecodedInst x;
 
     m.system = system;
     m.xedd = &x;
+    g_machine = &m;
     return &m;
 }
 
@@ -207,7 +207,8 @@ void ExecuteInstruction(struct Machine *m)
     //disasm(&dis8086, cs(), m->ip, nextbyte_mem, ds(), 0);
     //m->ip += dis8086.oplen;
     executeInstruction();
-    m->ip = getIP();
+    if (!isRepeating())
+        m->ip = getIP();
     m->oplen = 0;
     copyRegisters(m);
 }

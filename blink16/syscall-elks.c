@@ -45,8 +45,7 @@ static int SysWrite(struct exe *e, int fd, char *buf, size_t n)
 {
 #if BLINK16
     extern ssize_t ptyWrite(int fd, char *buf, int len);
-    extern struct Machine m;        // FIXME rewrite
-    SetWriteAddr(&m, buf-(char *)ram, n);
+    SetWriteAddr(g_machine, buf-(char *)ram, n);
     return ptyWrite(fd, buf, n);
 #else
     return write(fd, buf, n);

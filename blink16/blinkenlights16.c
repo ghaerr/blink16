@@ -2594,7 +2594,7 @@ static void OnDiskServiceReadSectors(void) {
   if (0 <= sector && offset + size <= m->system->elf.mapsize) {
     addr = m->es.base + Get16(m->bx);
     if (addr + size <= kRealSize) {
-      //SetWriteAddr(m, addr, size);
+      SetWriteAddr(m, addr, size);
       memcpy(m->system->real + addr, m->system->elf.map + offset, size);
       m->ah = 0x00;
       SetCarry(false);
@@ -2632,14 +2632,14 @@ static void OnDiskServiceReadSectorsExtended(void) {
   i64 pkt_addr = m->ds.base + Get16(m->si), addr, sectors, size, lba, offset;
   u8 pkt_size, *pkt;
   (void)drive;
-  //SetReadAddr(m, pkt_addr, 1);
+  SetReadAddr(m, pkt_addr, 1);
   pkt = m->system->real + pkt_addr;
   pkt_size = Get8(pkt);
   if ((pkt_size != 0x10 && pkt_size != 0x18) || Get8(pkt + 1) != 0) {
     m->ah = 0x01;
     SetCarry(true);
   } else {
-    //SetReadAddr(m, pkt_addr, pkt_size);
+    SetReadAddr(m, pkt_addr, pkt_size);
     addr = Read32(pkt + 4);
     if (addr == 0xFFFFFFFF && pkt_size == 0x18) {
       addr = Read64(pkt + 0x10);
@@ -2657,16 +2657,16 @@ static void OnDiskServiceReadSectorsExtended(void) {
         offset + size > m->system->elf.mapsize) {
       LOGF("bios read sector failed 0 <= %" PRId64 " && %" PRIx64 " <= %lx",
            lba, offset, m->system->elf.mapsize);
-      //SetWriteAddr(m, pkt_addr + 2, 2);
+      SetWriteAddr(m, pkt_addr + 2, 2);
       Write16(pkt + 2, 0);
       m->ah = 0x0d;
     } else if (addr >= kRealSize || addr + size > kRealSize) {
-      //SetWriteAddr(m, pkt_addr + 2, 2);
+      SetWriteAddr(m, pkt_addr + 2, 2);
       Write16(pkt + 2, 0);
       m->ah = 0x02;
       SetCarry(true);
     } else {
-      //SetWriteAddr(m, addr, size);
+      SetWriteAddr(m, addr, size);
       memcpy(m->system->real + addr, m->system->elf.map + offset, size);
       m->ah = 0x00;
       SetCarry(false);
