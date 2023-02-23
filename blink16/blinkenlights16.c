@@ -406,6 +406,9 @@ static void SetCarry(bool cf) {
   m->flags = SetFlag(m->flags, FLAGS_CF, cf);
 }
 
+extern bool IsCall(void);
+extern bool IsRet(void);
+
 #if !BLINK16
 static bool IsCall(void) {
   int dispatch = Mopcode(m->xedd->op.rde);
@@ -713,7 +716,7 @@ static void GetTtySize(int fd) {
 static void TuiRejuvinate(void) {
   struct termios term;
   struct sigaction sa;
-  LOGF("TuiRejuvinate");
+  // LOGF("TuiRejuvinate");
   GetTtySize(ttyout);
   HideCursor();
   memcpy(&term, &oldterm, sizeof(term));
@@ -781,19 +784,19 @@ static void OnSigCont(int sig, siginfo_t *si, void *uc) {
 }
 
 static void TtyRestore1(void) {
-  LOGF("TtyRestore1");
+  // LOGF("TtyRestore1");
   ShowCursor();
   TtyWriteString("\033[0m");
 }
 
 static void TtyRestore2(void) {
-  LOGF("TtyRestore2");
+  // LOGF("TtyRestore2");
   tcsetattr(ttyout, TCSANOW, &oldterm);
   DisableMouseTracking();
 }
 
 static void TuiCleanup(void) {
-  LOGF("TuiCleanup");
+  // LOGF("TuiCleanup");
   sigaction(SIGCONT, oldsig + 2, 0);
   TtyRestore1();
   DisableMouseTracking();
@@ -833,15 +836,16 @@ static void ResolveWatchpoints(void) {
     }
   }
 }
+#endif
 
 static void BreakAtNextInstruction(void) {
   struct Breakpoint b;
   memset(&b, 0, sizeof(b));
-  b.addr = GetPc(m) + m->xedd->length;
+  b.addr = GetPc(m) + /* m->xedd->length */ + m->oplen;
   b.oneshot = true;
   PushBreakpoint(&breakpoints, &b);
+  LOGF("set Breakpoint at %08x\n", (int)b.addr);
 }
-#endif
 
 static void LoadSyms(void) {
   //LoadDebugSymbols(&m->system->elf);
@@ -1252,7 +1256,7 @@ static i64 Disassemble(void) {
 
 static i64 GetDisIndex(void) {
   i64 i;
-  if ((i = DisFind(dis, GetPc(m) - m->oplen)) != -1 ||
+  if ((i = DisFind(dis, GetPc(m) /* - m->oplen */)) != -1 ||
       (i = Disassemble()) != -1) {
     while (i + 1 < dis->ops.i) {
       if (!dis->ops.p[i].size) {
@@ -3084,6 +3088,7 @@ static void OnStep(void) {
   if (action & FAILURE) return;
   action |= STEP;
   action &= ~NEXT;
+  action &= ~FINISH;  //FIXME PR
   action &= ~CONTINUE;
 }
 
@@ -3395,7 +3400,7 @@ _Noreturn static void PrintUsage(int rc, FILE *f) {
 }
 
 static void LogInstruction(void) {
-  LOGF("EXEC %04hx SP %04hx AX %04hx BX %04hx"
+  LOGF("EXEC IP %04hx SP %04hx AX %04hx BX %04hx"
        " CX %04hx DX %04hx BP %04hx SI %04hx DI %04hx",
        (unsigned short)m->ip, Get16(m->sp), Get16(m->ax), Get16(m->bx),
        Get16(m->cx), Get16(m->dx), Get16(m->bp), Get16(m->si), Get16(m->di));
@@ -3425,7 +3430,7 @@ static void ProfileOp(struct Machine *m, u64 pc) {
 
 static void StartOp_Tui(P) {
   ++cycle;
-  ProfileOp(m, m->ip - m->oplen);
+  ProfileOp(m, m->ip /* - m->oplen */);
 }
 #endif
 
@@ -3438,7 +3443,7 @@ static void Execute(void) {
   ExecuteInstruction(m);
   if (c == cycle) {
     ++cycle;
-    //ProfileOp(m, GetPc(m) - m->oplen);
+    //ProfileOp(m, GetPc(m) /* - m->oplen */);
   }
 }
 
@@ -3450,46 +3455,47 @@ static void Exec(void) {
   ExecSetup();
   if (!(interrupt = sigsetjmp(m->onhalt, 1))) {
     m->canhalt = true;
-#if !BLINK16
     if (!(action & CONTINUE) &&
-        (bp = IsAtBreakpoint(&breakpoints, m->ip)) != -1) {
+        (bp = IsAtBreakpoint(&breakpoints, m->cs.base + m->ip)) != -1) {
       LOGF("BREAK1 %0*" PRIx64 "", GetAddrHexWidth(), breakpoints.p[bp].addr);
     ReactToPoint:
       tuimode = true;
-      //LoadInstruction(m, GetPc(m));
+      LoadInstruction(m, GetPc(m));
       if (verbose) LogInstruction();
       Execute();
-      if (m->signals) {
-        if ((sig = ConsumeSignal(m)) && sig != SIGALRM_LINUX) {
-          exit(128 + sig);
-        }
-      }
-      CheckFramePointer();
-    } else if (!(action & CONTINUE) &&
+      //if (m->signals) {
+        //if ((sig = ConsumeSignal(m)) && sig != SIGALRM_LINUX) {
+          //exit(128 + sig);
+        //}
+      //}
+      //CheckFramePointer();
+    }
+#if !BLINK16
+    else if (!(action & CONTINUE) &&
                (bp = IsAtWatchpoint(&watchpoints, m)) != -1) {
       LOGF("WATCH1 %0*" PRIx64 " %s", GetAddrHexWidth(), watchpoints.p[bp].addr,
            watchpoints.p[bp].symbol);
       goto ReactToPoint;
-    } else
+    }
 #endif
-    {
+    else {
       action &= ~CONTINUE;
       for (;;) {
-#if !BLINK16
         LoadInstruction(m, GetPc(m));
-        if ((bp = IsAtBreakpoint(&breakpoints, m->ip)) != -1) {
+        if ((bp = IsAtBreakpoint(&breakpoints, m->cs.base + m->ip)) != -1) {
           LOGF("BREAK2 %0*" PRIx64 "", GetAddrHexWidth(),
                breakpoints.p[bp].addr);
           action &= ~(FINISH | NEXT | CONTINUE);
           tuimode = true;
           break;
         }
+#if !BLINK16
         if ((bp = IsAtWatchpoint(&watchpoints, m)) != -1) {
           EnterWatchpoint(bp);
           break;
         }
-        if (verbose) LogInstruction();
 #endif
+        if (verbose) LogInstruction();
         Execute();
 #if !BLINK16
         if (m->signals) {
@@ -3549,21 +3555,25 @@ static void Tui(void) {
   if (!(interrupt = sigsetjmp(m->onhalt, 1))) {
     m->canhalt = true;
     do {
-#if !BLINK16
       if (!(action & FAILURE)) {
         LoadInstruction(m, GetPc(m));
         if ((action & (FINISH | NEXT | CONTINUE)) &&
-            (bp = IsAtBreakpoint(&breakpoints, m->ip)) != -1) {
+            (bp = IsAtBreakpoint(&breakpoints, m->cs.base + m->ip)) != -1) {
           action &= ~(FINISH | NEXT | CONTINUE);
           LOGF("BREAK %0*" PRIx64 "", GetAddrHexWidth(),
                breakpoints.p[bp].addr);
-        } else if ((action & (FINISH | NEXT | CONTINUE)) &&
+        }
+#if !BLINK16
+        else if ((action & (FINISH | NEXT | CONTINUE)) &&
                    (bp = IsAtWatchpoint(&watchpoints, m)) != -1) {
           action &= ~(FINISH | NEXT | CONTINUE);
           LOGF("WATCH %0*" PRIx64 " AT PC %" PRIx64, GetAddrHexWidth(),
                watchpoints.p[bp].addr, GetPc(m));
         }
-      } else {
+#endif
+      }
+#if !BLINK16
+      else {
         m->xedd = (struct XedDecodedInst *)m->opcache->icache[0];
         m->xedd->length = 1;
         m->xedd->bytes[0] = 0xCC;
@@ -3631,18 +3641,20 @@ static void Tui(void) {
           action &= ~STEP;
           if (action & NEXT) {
             action &= ~NEXT;
-            //if (IsCall()) {
-              //BreakAtNextInstruction();
-              //break;
-            //}
+            if (IsCall()) {
+              BreakAtNextInstruction();
+              tuimode = false;  // FIXME PR
+              break;
+            }
           }
           if (action & FINISH) {
-            //if (IsCall()) {
-              //BreakAtNextInstruction();
-              //break;
-            //} else if (IsRet()) {
-              //action &= ~FINISH;
-            //}
+            if (IsCall()) {
+              BreakAtNextInstruction();
+              tuimode = false;  // FIXME PR
+              break;
+            } else if (IsRet()) {
+              action &= ~FINISH;
+            }
           }
         }
         //if (!IsDebugBreak() && IsAtWatchpoint(&watchpoints, m) == -1)
@@ -3670,10 +3682,10 @@ static void Tui(void) {
         //CheckFramePointer();
         if (!(action & CONTINUE)) {
           ScrollOp(&pan.disassembly, GetDisIndex());
-          //if ((action & FINISH) && IsRet()) action &= ~FINISH;
-          //if (((action & NEXT) && IsRet()) || (action & FINISH)) {
-            //action &= ~NEXT;
-          //}
+          if ((action & FINISH) && IsRet()) action &= ~FINISH;
+          if (((action & NEXT) && IsRet()) || (action & FINISH)) {
+            action &= ~NEXT;
+          }
         }
       }
     } while (tuimode);
@@ -3736,7 +3748,7 @@ static void GetOpts(int argc, char *argv[]) {
         //FLAG_statistics = true;
         break;
       case 'b':
-        //HandleBreakpointFlag(optarg_);
+        HandleBreakpointFlag(optarg_);
         break;
       case 'w':
         //HandleWatchpointFlag(optarg_);

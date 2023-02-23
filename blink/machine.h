@@ -292,6 +292,9 @@ struct MachineTlb {
 struct Machine {                           //
   u64 ip;                                  // instruction pointer
   u8 oplen;                                // length of operation
+#if BLINK16
+  u8 opcode;                               // opcode from LoadInstruction
+#endif
   u8 mode;                                 // [dup] XED_MODE_{REAL,LEGACY,LONG}
   bool nolinear;                           // [dup] no linear address resolution
   bool reserving;                          // did it call ReserveAddress?

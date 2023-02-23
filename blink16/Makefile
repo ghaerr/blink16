@@ -39,6 +39,7 @@ BLINK_SOURCE = \
     ../blink/formatint64thousands.c      \
     ../blink/errno.c                     \
     ../blink/endswith.c                  \
+    ../blink/breakpoint.c                \
 
 all: blink16
 

@@ -154,6 +154,7 @@ static void copyRegistersFromVM(struct Machine *m)
     Put16(m->di, di());
     Put16(m->bp, bp());
     Put16(m->sp, sp());
+    // IP not copied out
     m->cs.base = (m->cs.sel = cs()) << 4;
     m->ss.base = (m->ss.sel = ss()) << 4;
     m->ds.base = (m->ds.sel = ds()) << 4;
@@ -172,7 +173,7 @@ void copyRegistersToVM(struct Machine *m)
     setBP(Get16(m->bp));
     setES(m->es.sel);
     setDS(m->ds.sel);
-    //CS:IP, SS:SP registers not changed by handlers
+    // CS:IP, SS:SP registers not copied in from handlers
     setFlags(m->flags);
 }
 
@@ -262,6 +263,41 @@ struct Machine *NewMachine(struct System *system, struct Machine *parent)
     return &m;
 }
 
+/* NOTE: opcode length calc delayed until IsCall/IsRet true for speed */
+bool IsCall(void)
+{
+    /* check for near and far call, not call indirect register */
+    if (g_machine->opcode == 0x0E8 || g_machine->opcode == 0x9a) {
+        disasm(&dis8086, g_machine->cs.base >> 4, g_machine->ip, nextbyte_mem, ds(), 0);
+        g_machine->oplen = dis8086.oplen;
+        return true;
+    }
+    return false;
+}
+
+bool IsRet(void)
+{
+    switch (g_machine->opcode) {
+    case 0x0C2:     /* RET */
+    case 0x0C3:
+    case 0x0CA:
+    case 0x0CB:
+    case 0x0CF:     /* IRET */
+        disasm(&dis8086, g_machine->cs.base >> 4, g_machine->ip, nextbyte_mem, ds(), 0);
+        g_machine->oplen = dis8086.oplen;
+        return true;
+    default:
+        return false;
+    }
+}
+
+/* NOTE: only used to set opcode for IsCall/IsRet */
+void LoadInstruction(struct Machine *m, u64 pc)
+{
+    m->opcode = *LookupAddress(m, pc);
+    /* NOTE: m->oplen not set, and m->ip incremented in ExecuteInstruction! */
+}
+
 void ExecuteInstruction(struct Machine *m)
 {
     //disasm(&dis8086, cs(), m->ip, nextbyte_mem, ds(), 0);
@@ -269,13 +305,13 @@ void ExecuteInstruction(struct Machine *m)
     do {
         executeInstruction();
     } while (isRepeating() && !f_showreps);
+    m->oplen = getIP() - m->ip;
     if (!isRepeating())
         m->ip = getIP();
-    m->oplen = 0;
     copyRegistersFromVM(m);
 }
 
 i64 GetPc(struct Machine *m)
 {
-    return (cs() << 4) + m->ip;
+    return m->cs.base + m->ip;  /* use values prior to CS:IP changed */
 }
