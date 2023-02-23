@@ -269,7 +269,11 @@ struct System {
   void (*onlongbranch)(struct Machine *);
   int (*exec)(char *, char **, char **);
   void (*redraw)(bool);
+#if BLINK16
+  u8 *real;
+#else
   _Alignas(4096) u8 real[kRealSize];
+#endif
 };
 
 struct JitPath {

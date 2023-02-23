@@ -119,22 +119,7 @@ static void loadError(const char *msg, ...)
     exit(1);
 }
 
-static void set_entry_registers(void)
-{
-    if (f_verbose) printf("CS:IP %x:%x DS %x SS:SP %x:%x\n",
-        cs(), getIP(), ds(), ss(), sp());
-    setES(ds());        /* ES = DS */
-    setAX(0x0000);
-    setBX(0x0000);
-    setCX(0x0000);
-    setDX(0x0000);
-    setBP(0x0000);
-    setSI(0x0000);
-    setDI(0x0000);
-    setFlags(0x3202);
-}
-
-static void load_bios_irqs(void)
+static void load_bios_values(void)
 {
 }
 
@@ -219,8 +204,20 @@ void loadExecutableElks(struct exe *e, const char *path, int argc, char **argv, 
     //for (int i=dseg; i<dseg+bseg; i++)  /* clear BSS */
         //writeByte(0, i, DS);
 
-    load_bios_irqs();
-    set_entry_registers();
-    e->handleInterrupt = handleInterruptElks;
+    load_bios_values();
+
+    if (f_verbose) printf("CS:IP %04x:%04x DS %04x SS:SP %04x:%04x\n",
+        cs(), getIP(), ds(), ss(), sp());
+    setES(ds());        /* ES = DS */
+    setAX(0x0000);
+    setBX(0x0000);
+    setCX(0x0000);
+    setDX(0x0000);
+    setBP(0x0000);
+    setSI(0x0000);
+    setDI(0x0000);
+    setFlags(0xF202);   /* Interrupts enabled and 8086 reserved bits on */
+
+    e->handleSyscall = handleSyscallElks;
     e->checkStack = checkStackElks;
 }

@@ -13,6 +13,7 @@ BLINK16_SOURCE = \
     syscall-elks.c              \
     loader-dos.c                \
     syscall-dos.c               \
+    loader-bin.c                \
 
 BLINK_SOURCE = \
     ../blink/commandv.c                  \

@@ -560,10 +560,12 @@ static void decode(struct dis *d)
             case 0xeb:  // JMP cb
                 outs(d, "jmp", JMP|SBYTE);
                 break;
-            case 0xe4: case 0xe5: case 0xe6: case 0xe7:  // IN, OUT ib
+            case 0xe4: case 0xe5:   // IN ib
+            case 0xe6: case 0xe7:   // OUT ib
                 outs(d, (opcode & 2)? "out": "in", IMM|BYTE|ACC);
                 break;
-            case 0xec: case 0xed: case 0xee: case 0xef:  // IN, OUT dx
+            case 0xec: case 0xed:   // IN dx
+            case 0xee: case 0xef:   // OUT dx
                 d_modRM = 0xd0;
                 outs(d, (opcode & 2)? "out": "in", OPS2);
                 break;

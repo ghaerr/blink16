@@ -12,9 +12,11 @@
 
 #if BLINK16
 #include "blink/machine.h"
+#define f_verbose   0
+#else
+extern int f_verbose;
 #endif
 
-extern int f_verbose;
 extern  Word loadSegment;
 
 static char* pathBuffers[2];
@@ -25,8 +27,7 @@ static void* alloc(size_t bytes)
 {
     void* r = malloc(bytes);
     if (r == 0) {
-        fprintf(stderr, "Out of memory\n");
-        exit(1);
+        runtimeError("Out of memory\n");
     }
     return r;
 }
@@ -106,12 +107,7 @@ int checkStackDOS(struct exe *e)
 
 static int SysExit(struct exe *e, int rc)
 {
-#if BLINK16
-    extern void ReactiveDraw(void);
-    ReactiveDraw();
-#else
     if (f_verbose) printf("EXIT %d\n", rc);
-#endif
     exit(rc);
     return -1;
 }
@@ -127,7 +123,7 @@ static int SysWrite(struct exe *e, int fd, char *buf, size_t n)
 #endif
 }
 
-void handleInterruptDOS(struct exe *e, int intno)
+int handleSyscallDOS(struct exe *e, int intno)
 {
         int fileDescriptor;
         char *p, *addr;
@@ -369,6 +365,7 @@ void handleInterruptDOS(struct exe *e, int intno)
                     default:
                         runtimeError("Unknown DOS/BIOS call: int 0x%02x, "
                             "ah = 0x%02x", intno, (unsigned)ah());
-                        break;
+                        return 0;
                 }
+                return 1;
 }

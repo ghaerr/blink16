@@ -46,8 +46,10 @@ int GetNeededFlags(struct Machine *, i64, int);
 
 static inline bool GetFlag(u32 f, int b) {
   switch (b) {
+#if !BLINK16
     case FLAGS_PF:
       return GetLazyParityBool(f);
+#endif
     default:
       return (f >> b) & 1;
   }
@@ -55,8 +57,10 @@ static inline bool GetFlag(u32 f, int b) {
 
 static inline u32 SetFlag(u32 f, int b, bool v) {
   switch (b) {
+#if !BLINK16
     case FLAGS_PF:
       return SetLazyParityByte(f, !v);
+#endif
     default:
       return (f & ~(1u << b)) | v << b;
   }

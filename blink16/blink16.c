@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <setjmp.h>
 #include <sys/stat.h>
 #include "blink/machine.h"
 #include "blink/endian.h"
@@ -17,7 +18,7 @@
 #include "discolor.h"
 #include "syms.h"
 
-static char f_asmout = 0;
+static unsigned char f_showreps = 0;    /* show each rep instruction cycle */
 static struct dis dis8086;
 static struct exe exe8086;
 
@@ -143,7 +144,7 @@ const char *DisGetLine(struct Dis *d, struct Machine *m, int i)
     return line;
 }
 
-static void copyRegisters(struct Machine *m)
+static void copyRegistersFromVM(struct Machine *m)
 {
     Put16(m->ax, ax());
     Put16(m->bx, bx());
@@ -151,13 +152,69 @@ static void copyRegisters(struct Machine *m)
     Put16(m->dx, dx());
     Put16(m->si, si());
     Put16(m->di, di());
-    Put16(m->sp, sp());
     Put16(m->bp, bp());
+    Put16(m->sp, sp());
     m->cs.base = (m->cs.sel = cs()) << 4;
     m->ss.base = (m->ss.sel = ss()) << 4;
     m->ds.base = (m->ds.sel = ds()) << 4;
     m->es.base = (m->es.sel = es()) << 4;
     m->flags = getFlags();
+}
+
+void copyRegistersToVM(struct Machine *m)
+{
+    setAX(Get16(m->ax));
+    setBX(Get16(m->bx));
+    setCX(Get16(m->cx));
+    setDX(Get16(m->dx));
+    setSI(Get16(m->si));
+    setDI(Get16(m->di));
+    setBP(Get16(m->bp));
+    setES(m->es.sel);
+    setDS(m->ds.sel);
+    //CS:IP, SS:SP registers not changed by handlers
+    setFlags(m->flags);
+}
+
+extern bool OnHalt2(int interrupt);
+extern bool tuimode;
+
+bool OnHalt(int interrupt)
+{
+    bool ret;
+    copyRegistersFromVM(g_machine);
+    ret = OnHalt2(interrupt);
+    copyRegistersToVM(g_machine);
+    return ret;
+}
+
+void handleInterrupt(struct exe *e, int intno)
+{
+    if (intno == 0x80 || intno == 0x21) {
+        bool old = tuimode;
+        tuimode = true;
+        g_machine->system->redraw(true);
+        if (e->handleSyscall(e, intno))
+            tuimode = old;  /* old tuimode on success */
+        return;
+    }
+#if 0
+    switch (intno) {
+    case INT0_DIV_ERROR:
+        runtimeError("Divide by zero");
+        return;
+    case INT3_BREAKPOINT:
+        runtimeError("Breakpoint trap");
+        return;
+    case INT4_OVERFLOW:
+        runtimeError("Overflow trap");
+        return;
+    default:
+        runtimeError("Unknown INT 0x%02x", intno);
+    }
+#endif
+    unassert(g_machine->canhalt);
+    siglongjmp(g_machine->onhalt, intno);
 }
 
 void LoadProgram(struct Machine *m, char *prog, char **args, char **vars)
@@ -168,11 +225,13 @@ void LoadProgram(struct Machine *m, char *prog, char **args, char **vars)
     int ac = 0;
     for (char **av = args; *av; av++) ac++;
     initMachine(&exe8086);
-    if (endswith(prog, ".exe"))
+    if (endswith(prog, ".bin"))
+        loadExecutableBinary(&exe8086, prog, ac, args, vars);
+    else if (endswith(prog, ".exe"))
         loadExecutableDOS(&exe8086, prog, ac, args, vars);
     else loadExecutableElks(&exe8086, prog, ac, args, vars);
     sym_read_exe_symbols(&exe8086, prog);
-    copyRegisters(m);
+    copyRegistersFromVM(m);
     exe8086.textseg = cs();
     m->cs.base = (m->cs.sel = cs()) << 4;
     m->ip = getIP();
@@ -197,6 +256,7 @@ struct Machine *NewMachine(struct System *system, struct Machine *parent)
     static struct XedDecodedInst x;
 
     m.system = system;
+    m.system->real = (u8 *)ram;
     m.xedd = &x;
     g_machine = &m;
     return &m;
@@ -206,21 +266,16 @@ void ExecuteInstruction(struct Machine *m)
 {
     //disasm(&dis8086, cs(), m->ip, nextbyte_mem, ds(), 0);
     //m->ip += dis8086.oplen;
-    executeInstruction();
+    do {
+        executeInstruction();
+    } while (isRepeating() && !f_showreps);
     if (!isRepeating())
         m->ip = getIP();
     m->oplen = 0;
-    copyRegisters(m);
+    copyRegistersFromVM(m);
 }
 
 i64 GetPc(struct Machine *m)
 {
     return (cs() << 4) + m->ip;
-}
-
-bool GetParity(u8 b) {
-  b ^= b >> 4;
-  b ^= b >> 2;
-  b ^= b >> 1;
-  return ~b & 1;
 }

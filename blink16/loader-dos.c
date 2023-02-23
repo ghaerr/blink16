@@ -69,22 +69,7 @@ static void write_environ(int argc, char **argv, char **envp)
     writeByte(i - 0x81, 0x80, ES);
 }
 
-static void set_entry_registers(void)
-{
-    if (f_verbose)
-        printf("CS:IP %04x:%04x DS %04x SS:SP %04x:%04x\n", cs(), getIP(), ds(), ss(), sp());
-    setES(loadSegment - 0x10);
-    setAX(0x0000);
-    setBX(0x0000);
-    setCX(0x0000);
-    setDX(0x0000);  // was segment
-    setBP(0x091C);
-    setSI(0x0100);
-    setDI(0xFFFE);
-    setFlags(0x0002);
-}
-
-static void load_bios_irqs(void)
+static void load_bios_values(void)
 {
     // Fill up parts of the interrupt vector table, the BIOS clock tick count,
     // and parts of the BIOS ROM area with stuff, for the benefit of the far
@@ -168,10 +153,10 @@ void loadExecutableDOS(struct exe *e, const char *path, int argc, char **argv, c
         setShadowFlags(0, ES, filesize, fRead|fWrite);
         setES(loadSegment - 0x10);
         setDS(loadSegment);
-        setCS(loadSegment);
-        setIP(0x0100);
         setSS(loadSegment);
         setSP(0xFFFE);
+        setCS(loadSegment);
+        setIP(0x0100);
         e->t_stackLow = ((DWord)loadSegment << 4) + filesize;
     }
     // Some testcases copy uninitialized stack data, so mark as initialized
@@ -198,8 +183,20 @@ void loadExecutableDOS(struct exe *e, const char *path, int argc, char **argv, c
         } while (d != 0);
     }
 #endif
-    load_bios_irqs();
-    set_entry_registers();
-    e->handleInterrupt = handleInterruptDOS;
+    load_bios_values();
+
+    if (f_verbose) printf("CS:IP %04x:%04x DS %04x SS:SP %04x:%04x\n",
+        cs(), getIP(), ds(), ss(), sp());
+    setES(loadSegment - 0x10);
+    setAX(0x0000);
+    setBX(0x0000);
+    setCX(0x0000);
+    setDX(0x0000);
+    setBP(0x091C);
+    setSI(0x0100);
+    setDI(0xFFFE);
+    setFlags(0xF202);   /* Interrupts enabled and 8086 reserved bits on */
+
+    e->handleSyscall = handleSyscallDOS;
     e->checkStack = checkStackDOS;
 }

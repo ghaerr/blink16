@@ -291,13 +291,14 @@ extern char **environ;
 
 static bool belay;
 static bool react;
-static bool tuimode;
+bool tuimode;
 static bool alarmed;
 static bool natural;
 static bool mousemode;
 static bool showhighsse;
 static bool showprofile;
 static bool readingteletype;
+static bool displayexec;    /* 'D' -> DrawDisplayOnly during Exec() */
 
 static int tyn;
 static int txn;
@@ -940,7 +941,7 @@ static void ExecSetup(void) {
   it.it_interval.tv_usec = 1. / FPS * 1e6;
   it.it_value.tv_sec = 0;
   it.it_value.tv_usec = 1. / FPS * 1e6;
-  setitimer(ITIMER_REAL, &it, 0);
+  //setitimer(ITIMER_REAL, &it, 0);     // FIXME
 }
 
 static void pcmpeqb(u8 x[16], const u8 y[16]) {
@@ -1334,6 +1335,7 @@ static void DrawDisplay(struct Panel *p) {
       DrawHr(&pan.displayhr, "MONOCHROME DISPLAY ADAPTER");
       DrawMda(p, (u8(*)[80][2])(m->system->real + 0xb0000));
       break;
+    case 2:
     case 3:
       DrawHr(&pan.displayhr, "COLOR GRAPHICS ADAPTER");
       DrawCga(p, (u8(*)[80][2])(m->system->real + 0xb8000));
@@ -2104,7 +2106,7 @@ static void Redraw(bool force) {
   last_draw = GetTime();
 }
 
-void ReactiveDraw(void) {
+static void ReactiveDraw(void) {
   if (tuimode) {
     // LOGF("%" PRIx64 " %s ReactiveDraw", GetPc(m), tuimode ? "TUI" : "EXEC");
     Redraw(true);
@@ -2190,6 +2192,10 @@ static bool HasPendingInput(int fd) {
 #endif
     poll(fds, ARRAYLEN(fds), 0);
   return fds[0].revents & (POLLIN | POLLERR);
+}
+
+static bool HasPendingKeyboard(void) {
+  return HasPendingInput(ttyin);
 }
 
 static struct Panel *LocatePanel(int y, int x) {
@@ -2344,6 +2350,7 @@ static void DrawDisplayOnly(struct Panel *p) {
   for (i = 0; i < yn; ++i) {
     p->lines[i].i = 0;
   }
+  p->lines[yn].i = 0;   //FIXME PR
   DrawDisplay(p);
   memset(&b, 0, sizeof(b));
   tly = tyn / 2 - yn / 2;
@@ -2359,7 +2366,7 @@ static void DrawDisplayOnly(struct Panel *p) {
     }
     AppendStr(&b, "\033[0m\033[K");
   }
-  write(ttyout, b.p, b.i);
+  UninterruptibleWrite(ttyout, b.p, b.i);
   free(b.p);
 }
 
@@ -2811,16 +2818,19 @@ static void OnKeyboardServiceReadKeyPress(void) {
   static char buf[32];
   static size_t pending;
   LOGF("OnKeyboardServiceReadKeyPress");
-  if (!tuimode) {
+  if (!tuimode && !displayexec) {
     tuimode = true;
     action |= CONTINUE;
   }
   pty->conf |= kPtyBlinkcursor;
   if (!pending) {
+again:
     rc = ReadAnsi(ttyin, buf, sizeof(buf));
+    unassert(rc != 0);
     if (rc > 0) {
       pending = rc;
     } else if (rc == -1 && errno == EINTR) {
+      if (action & ALARM) goto again;
       return;
     } else {
       exitcode = 0;
@@ -2828,6 +2838,7 @@ static void OnKeyboardServiceReadKeyPress(void) {
       return;
     }
   }
+
   b = buf[0];
   if (pending > 1) {
     memmove(buf, buf + 1, pending - 1);
@@ -2840,10 +2851,18 @@ static void OnKeyboardServiceReadKeyPress(void) {
   m->ax[1] = 0;
 }
 
+static void OnKeyboardServiceCheckKeyPress(void) {
+  bool b = HasPendingKeyboard();
+  m->flags = SetFlag(m->flags, FLAGS_ZF, !b);   /* ZF=0 if key pressed */
+}
+
 static void OnKeyboardService(void) {
   switch (m->ah) {
     case 0x00:
       OnKeyboardServiceReadKeyPress();
+      break;
+    case 0x01:
+      OnKeyboardServiceCheckKeyPress();
       break;
     default:
       break;
@@ -2902,7 +2921,10 @@ static void OnInt15h(void) {
   }
 }
 
-static bool OnHalt(int interrupt) {
+extern bool OnHalt(int interrupt);
+static unsigned int biosRTC;
+
+bool OnHalt2(int interrupt) {
   LOGF("%" PRIx64 " %s OnHalt(%#x)", GetPc(m), tuimode ? "TUI" : "EXEC",
        interrupt);
   ReactiveDraw();
@@ -2922,6 +2944,11 @@ static bool OnHalt(int interrupt) {
       return true;
     case 0x16:
       OnKeyboardService();
+      return true;
+    case 0x1A:
+       biosRTC++;   // fake up BIOS RTC in CX:DX
+       Put16(m->dx, biosRTC >> 4);
+       Put16(m->cx, biosRTC >> 12);
       return true;
     case kMachineEscape:
       return true;
@@ -3132,10 +3159,6 @@ static void OnXmmDisp(void) {
 }
 #endif
 
-static bool HasPendingKeyboard(void) {
-  return HasPendingInput(ttyin);
-}
-
 static void Sleep(int ms) {
 #ifdef __COSMOPOLITAN__
   if (!IsWindows())
@@ -3255,7 +3278,8 @@ static void HandleKeyboard(const char *k) {
     CASE('n', OnNext());
     CASE('f', OnFinish());
     CASE('c', OnContinueTui());
-    CASE('C', OnContinueExec());
+    CASE('C', displayexec = 0; OnContinueExec());
+    CASE('D', displayexec = 1; OnContinueExec());
     CASE('R', OnRestart());
     //CASE('x', OnXmmDisp());
     //CASE('t', OnXmmType());
@@ -3504,6 +3528,8 @@ static void Exec(void) {
     //}
     if (OnHalt(interrupt)) {
       if (!tuimode) {
+        if (displayexec)
+          DrawDisplayOnly(&pan.display);
         goto KeepGoing;
       }
     }
@@ -3685,13 +3711,15 @@ static void GetOpts(int argc, char *argv[]) {
         break;
       case 'm':
         wantunsafe = true;
-        //if (!CanHaveLinearMemory()) {
-          //fprintf(stderr,
-                  //"linearization not possible on this system"
-                  //" (word size is %d bits and page size is %ld)\n",
-                  //bsr(UINTPTR_MAX) + 1, sysconf(_SC_PAGESIZE));
-          //exit(1);
-        //}
+#if !BLINK16
+        if (!CanHaveLinearMemory()) {
+          fprintf(stderr,
+                  "linearization not possible on this system"
+                  " (word size is %d bits and page size is %ld)\n",
+                  bsr(UINTPTR_MAX) + 1, sysconf(_SC_PAGESIZE));
+          exit(1);
+        }
+#endif
         break;
       case 'R':
         react = false;

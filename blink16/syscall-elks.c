@@ -16,9 +16,10 @@
 
 #if BLINK16
 #include "blink/machine.h"
-#endif
-
+#define f_verbose   0
+#else
 extern int f_verbose;
+#endif
 
 /* return true on stack overflow */
 int checkStackElks(struct exe *e)
@@ -31,12 +32,7 @@ int checkStackElks(struct exe *e)
 
 static int SysExit(struct exe *e, int rc)
 {
-#if BLINK16
-    extern void ReactiveDraw(void);
-    ReactiveDraw();
-#else
     if (f_verbose) printf("EXIT %d\n", rc);
-#endif
     exit(rc);
     return -1;
 }
@@ -113,28 +109,13 @@ static int SysSbrk(struct exe *e, int incr, int offset_result)
 #define rptr(off)     ((char *)&ram[physicalAddress(off, SS, false)])
 #define wptr(off)     ((char *)&ram[physicalAddress(off, SS, true)])
 
-void handleInterruptElks(struct exe *e, int intno)
+int handleSyscallElks(struct exe *e, int intno)
 {
     unsigned int AX = ax();
     unsigned int BX = bx();
     unsigned int CX = cx();
     unsigned int DX = dx();
 
-    switch (intno) {
-    case INT0_DIV_ERROR:
-        runtimeError("Divide by zero");
-        return;
-    case INT3_BREAKPOINT:
-        runtimeError("Breakpoint trap");
-        return;
-    case INT4_OVERFLOW:
-        runtimeError("Overflow trap");
-        return;
-    case 0x80:              /* sys call */
-        break;
-    default:
-        runtimeError("Unknown INT 0x%02x", intno);
-    }
     /* syscall args: BX, CX, DX, DI, SI */
     switch (AX) {
     SYSCALL(1,  SysExit,  (e, BX));
@@ -144,16 +125,16 @@ void handleInterruptElks(struct exe *e, int intno)
     SYSCALL(6,  SysClose, (e, BX));
     SYSCALL(17, SysBreak, (e, BX));
     SYSCALL(69, SysSbrk,  (e, BX, CX));
-    case 54:            // ioctl
+    case 54:            // ioctl FIXME
         if (f_verbose)
-            printf("IOCTL %d,%c%02d,%x\n", bx(), cx()>>8, cx()&0xff, dx());
-        setAX(bx() < 3? 0: -1);
-        return;
+            printf("IOCTL %d,%c%02d,%x\n", BX, CX>>8, CX&0xff, DX);
+        AX = BX < 3? 0: -1;
+        break;
     default:
-        fprintf(stderr, "Unknown SYS call: AX %04x(%d) BX %04x CX %04x DX %04x\n",
+        runtimeError("Unknown SYS call %d: AX %04x BX %04x CX %04x DX %04x\n",
             AX, AX, BX, CX, DX);
-        //runtimeError("");
-        AX = -1;
+        return 0;
     }
     setAX(AX);
+    return 1;
 }

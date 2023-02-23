@@ -24,7 +24,8 @@
 struct High g_high = {
     .enabled = true,
     .active = true,
-    .keyword = 155,
+    //.keyword = 155,
+    .keyword = 40,
     .reg = 215,
     .literal = 182,
     .label = 221,
