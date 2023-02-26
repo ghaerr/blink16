@@ -46,5 +46,8 @@ all: blink16
 blink16: $(BLINK16_SOURCE) $(BLINK_SOURCE)
 	gcc -DBLINK16=1 -I.. -Os -o $@ $^ -lz
 
+elks: blink16
+	./blink16 -S system.sym -T 00d0 -D 0c39 -b 00d0:0000 -b 00d0:12b0 -b 2d00:0000 fd1440.img
+
 clean:
 	rm -f blink16

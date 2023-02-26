@@ -62,7 +62,12 @@ static char AccessCommand(struct PathSearcher *ps, const char *suffix,
   if (pathlen && ps->path[pathlen - 1] != '/') ps->path[pathlen++] = '/';
   memcpy(ps->path + pathlen, ps->name, ps->namelen);
   memcpy(ps->path + pathlen + ps->namelen, suffix, suffixlen + 1);
+#if BLINK16
+  return !access(ps->path,
+    endswith(ps->path, ".bin") || endswith(ps->path, ".img")? R_OK: X_OK);
+#else
   return !access(ps->path, X_OK);
+#endif
 }
 
 static char SearchPath(struct PathSearcher *ps, const char *suffix) {

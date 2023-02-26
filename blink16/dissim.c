@@ -28,13 +28,13 @@ char * getsymbol(struct dis *d, int seg, int offset)
             *p = '\0';
             return buf;
         }
-        //if (seg == e->textseg) {
+        if (seg == e->textseg) {
             p = highStart(buf, g_high.symbol);
             p = stpcpy(p, sym_text_symbol(e, offset, 1));
             p = highEnd(p);
             *p = '\0';
             return buf;
-        //}
+        }
     }
 
     sprintf(buf, "0x%04x", offset);

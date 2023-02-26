@@ -138,8 +138,8 @@ int handleSyscallDOS(struct exe *e, int intno)
                     case 0x1a00:
                         data = es();
                         setES(0);
-                        setDX(readWordSeg(0x046c, ES));
-                        setCX(readWordSeg(0x046e, ES));
+                        setDX(readWord(0x046c, ES));
+                        setCX(readWord(0x046e, ES));
                         setAL(readByte(0x0470, ES));
                         setES(data);
                         break;

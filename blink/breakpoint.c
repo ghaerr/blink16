@@ -43,11 +43,11 @@ ssize_t PushBreakpoint(struct Breakpoints *bps, struct Breakpoint *b) {
   return bps->i - 1;
 }
 
-ssize_t IsAtBreakpoint(struct Breakpoints *bps, i64 addr) {
+ssize_t IsAtBreakpoint(struct Breakpoints *bps, u16 seg, i64 addr) {
   int i;
   for (i = bps->i; i--;) {
     if (bps->p[i].disable) continue;
-    if (bps->p[i].addr == addr) {
+    if (bps->p[i].seg == seg && bps->p[i].addr == addr) {
       if (bps->p[i].oneshot) {
         bps->p[i].disable = true;
         if (i == bps->i - 1) {

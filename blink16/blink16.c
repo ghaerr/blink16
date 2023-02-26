@@ -77,12 +77,19 @@ long Dis(struct Dis *d, struct Machine *m, i64 addr, i64 ip, int lines)
         d->ops.n = lines;
         d->ops.p = calloc(lines * sizeof(struct DisOp), 1);
         unassert(d->ops.p);
+    } else {
+        for (i=0; i<d->ops.i; i++) {
+            if (d->ops.p[i].s) {
+                free(d->ops.p[i].s);
+                d->ops.p[i].s = 0;
+            }
+        }
     }
     d->ops.i = lines;
     nextip = ip;
     dis8086.e = &exe8086;
     for (i=0; i<lines; i++) {
-        addr_t fnstart = sym_fn_start_address(&exe8086, nextip);
+        addr_t fnstart = sym_fn_start_address(&exe8086, nextip); //FIXME seg needed
         if (d->ops.p[i].s) {
             free(d->ops.p[i].s);
             d->ops.p[i].s = 0;
@@ -116,7 +123,7 @@ long Dis(struct Dis *d, struct Machine *m, i64 addr, i64 ip, int lines)
 }
 
 // use lmr
-long DisFind(struct Dis *d, i64 addr)
+long DisFind(struct Dis *d, i64 addr)   //FIXME pass seg seperately
 {
     int i;
     addr -= cs() << 4;
@@ -189,31 +196,48 @@ bool OnHalt(int interrupt)
     return ret;
 }
 
-void handleInterrupt(struct exe *e, int intno)
+int canHandleInterrupt(struct exe *e, int intno)
 {
-    if (intno == 0x80 || intno == 0x21) {
+    switch (intno) {
+    case 0x80:      // ELKS syscall
+    case 0x21:      // DOS syscall
+        return !g_machine->metal;
+    case 0:         // HW divide
+    case 3:         // HW INT 3
+    case 4:         // HW INTO
+    case 0x10:      // BIOS conout
+    case 0x12:      // BIOS memsize
+    case 0x13:      // BIOS disk i/o
+    case 0x16:      // BIOS conin
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+int handleInterrupt(struct exe *e, int intno)
+{
+    switch (intno) {
+    case INT0_DIV_ERROR:
+        runtimeError("Divide by zero");
+    case INT3_BREAKPOINT:
+        runtimeError("Breakpoint trap");
+    case INT4_OVERFLOW:
+        runtimeError("Overflow trap");
+    //default:
+        //runtimeError("Unknown INT 0x%02x", intno);
+    }
+
+    if (!g_machine->metal && (intno == 0x80 || intno == 0x21)) {
         bool old = tuimode;
         tuimode = true;
         g_machine->system->redraw(true);
         if (e->handleSyscall(e, intno))
             tuimode = old;  /* old tuimode on success */
-        return;
+        return 1;
     }
-#if 0
-    switch (intno) {
-    case INT0_DIV_ERROR:
-        runtimeError("Divide by zero");
-        return;
-    case INT3_BREAKPOINT:
-        runtimeError("Breakpoint trap");
-        return;
-    case INT4_OVERFLOW:
-        runtimeError("Overflow trap");
-        return;
-    default:
-        runtimeError("Unknown INT 0x%02x", intno);
-    }
-#endif
+
+    g_machine->ip = getIP();
     unassert(g_machine->canhalt);
     siglongjmp(g_machine->onhalt, intno);
 }
@@ -222,18 +246,30 @@ void LoadProgram(struct Machine *m, char *prog, char **args, char **vars)
 {
     int n;
     struct stat sbuf;
+    extern char *symtab;
+    extern long Tsegment, Dsegment;
 
     int ac = 0;
     for (char **av = args; *av; av++) ac++;
     initMachine(&exe8086);
-    if (endswith(prog, ".bin"))
+    m->metal = endswith(prog, ".bin") || endswith(prog, ".img");
+    if (m->metal) {
         loadExecutableBinary(&exe8086, prog, ac, args, vars);
-    else if (endswith(prog, ".exe"))
+        if (symtab) {
+            sym_read_symbols(&exe8086, symtab);
+            exe8086.textseg = Tsegment;
+            exe8086.ftextseg = 0;
+            exe8086.dataseg = Dsegment;
+        }
+    } else if (endswith(prog, ".exe")) {
         loadExecutableDOS(&exe8086, prog, ac, args, vars);
-    else loadExecutableElks(&exe8086, prog, ac, args, vars);
-    sym_read_exe_symbols(&exe8086, prog);
+    } else {
+        loadExecutableElks(&exe8086, prog, ac, args, vars);
+        sym_read_exe_symbols(&exe8086, prog);
+        exe8086.textseg = cs();
+    }
+
     copyRegistersFromVM(m);
-    exe8086.textseg = cs();
     m->cs.base = (m->cs.sel = cs()) << 4;
     m->ip = getIP();
     m->system->codestart = m->ip;

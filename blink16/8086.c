@@ -17,8 +17,6 @@
 
 #if BLINK16
 #include "blink/machine.h"
-#else
-typedef int bool;
 #endif
 
 /* emulator globals */
@@ -28,6 +26,7 @@ Byte ram[RAMSIZE];
 int f_verbose;
 
 static Byte shadowRam[RAMSIZE];
+static bool doShadowCheck;
 static bool useMemory;
 static Word address;
 static Word ip;
@@ -67,6 +66,7 @@ int initMachine(struct exe *e)
     prefix = false;
     repeating = false;
     running = false;
+    doShadowCheck = true;
 
     setCX(0x00FF);      /* must be 0x00FF as for big endian test below */
     Byte* byteData = (Byte*)&registers[0];
@@ -83,10 +83,46 @@ void initExecute(void)
     running = true;
 }
 
+#define CF  0x0001
+#define PF  0x0004
+#define AF  0x0010
+#define ZF  0x0040
+#define SF  0x0080
+#define TF  0x0100
+#define IF  0x0200
+#define DF  0x0400
+#define OF  0x0800
+
+static void farJump();
+static void push(Word value);
+
+static void performInterrupt(struct exe *e, int intno)
+{
+    if (canHandleInterrupt(e, intno))
+        handleInterrupt(e, intno);
+    else {
+        push(flags);
+        push(cs());
+        push(ip);
+        flags &= ~(IF | TF);
+        setCS(0x0000);
+        savedIP = readWord((intno << 2) + 0, CS);
+        savedCS = readWord((intno << 2) + 2, CS);
+        if (!savedIP && !savedCS)
+            runtimeError("INT 0x%02x vector not set\n", intno);
+        farJump();
+    }
+}
+
 static void divideOverflow(void)
 {
-    handleInterrupt(ep, INT0_DIV_ERROR);
+    performInterrupt(ep, INT0_DIV_ERROR);
     data = source = 1;
+}
+
+void setShadowCheck(bool on)
+{
+    doShadowCheck = on;
 }
 
 void setShadowFlags(Word offset, int seg, int len, int flags)
@@ -121,6 +157,9 @@ DWord physicalAddress(Word offset, int seg, int write)
     if (a >= RAMSIZE)
         runtimeError("Accessing address outside RAM %s %04x:%04x\n",
             segname[seg], segmentAddress, offset);
+
+    if (!doShadowCheck)
+        return a;
     flags = shadowRam[a];
     if (write && running && !(flags & fWrite))
         runtimeError("Writing disallowed address %s %04x:%04x\n",
@@ -142,7 +181,7 @@ Byte readByte(Word offset, int seg)
     return ram[a];
 }
 
-Word readWordSeg(Word offset, int seg)
+Word readWord(Word offset, int seg)
 {
     DWord a = physicalAddress(offset, seg, false);
     Word r = ram[a];
@@ -173,7 +212,7 @@ void writeWord(Word value, Word offset, int seg)
 
 static Word readwb(Word offset, int seg)
 {
-    return wordSize ? readWordSeg(offset, seg) : readByte(offset, seg);
+    return wordSize ? readWord(offset, seg) : readByte(offset, seg);
 }
 
 static void writewb(Word value, Word offset, int seg)
@@ -313,7 +352,7 @@ static void push(Word value)
     writeWord(value, sp(), SS);
 }
 static Word pop() {
-    Word r = readWordSeg(sp(), SS);
+    Word r = readWord(sp(), SS);
     setSP(sp() + 2);
     o('}');
     return r;
@@ -452,10 +491,17 @@ static void farLoad()
 {
     if (!useMemory)
         runtimeError("This instruction needs a memory address");
-    savedIP = readWordSeg(address, -1);
-    savedCS = readWordSeg(address + 2, -1);
+    savedIP = readWord(address, -1);
+    savedCS = readWord(address + 2, -1);
 }
-static void farJump() { setCS(savedCS); doJump(savedIP); }
+static void farJump()
+{
+    if (!savedCS && !savedIP)
+        runtimeError("Far jump to 0:0\n");
+    setCS(savedCS);
+    doJump(savedIP);
+}
+
 static void farCall() { push(cs()); push(ip); farJump(); }
 static void call(Word address) { push(ip); doJump(address); }
 static Word incdec(bool decrement)
@@ -598,9 +644,10 @@ void executeInstruction(void)
             case 0x0f:  // POP CS
             case 0x9b:  // WAIT
             case 0xf0:  // LOCK
-            case 0xf4:  // HLT
                 runtimeError("Invalid opcode %02x", opcode);
                 break;
+            case 0xf4:  // HLT
+                break;  // FIXME possible interrupt?
             case 0xe4: case 0xe5:   // IN ib
                 (void)fetchByte();
                 //FIXME implement, returns -1 for now
@@ -810,20 +857,21 @@ void executeInstruction(void)
                 o('m');
                 break;
             case 0xcc:  // INT 3
-                handleInterrupt(ep, INT3_BREAKPOINT);
+                performInterrupt(ep, INT3_BREAKPOINT);
                 break;
             case 0xcd:
-                handleInterrupt(ep, fetchByte());
+                performInterrupt(ep, fetchByte());
                 o('$');
                 break;
             case 0xce:  // INTO
-                handleInterrupt(ep, INT4_OVERFLOW);
+                performInterrupt(ep, INT4_OVERFLOW);
                 break;
             case 0xcf:  // IRET
                 o('I');
                 doJump(pop());
                 setCS(pop());
-                flags = pop() | 2;
+                flags = pop() | 0xF002;
+                if (!cs() && !ip) runtimeError("IRET to 0:0!\n");
                 break;
             case 0xd0: case 0xd1: case 0xd2: case 0xd3:  // rot rmv,n
                 data = readEA();

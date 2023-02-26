@@ -1,12 +1,10 @@
 /* 8086 emulator header file */
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef uint8_t  Byte;
 typedef uint16_t Word;
 typedef uint32_t DWord;
-#ifndef false
-enum { false = 0, true };
-#endif
 
 /* segment registers after 8 general registers */
 enum { ES = 0, CS, SS, DS };
@@ -26,7 +24,8 @@ int isRepeating(void);
 
 /* emulator callouts */
 void runtimeError(const char *msg, ...);
-void handleInterrupt(struct exe *e, int intno);
+int canHandleInterrupt(struct exe *e, int intno);
+int handleInterrupt(struct exe *e, int intno);
 int checkStackElks(struct exe *e);
 int checkStackDOS(struct exe *e);
 int handleSyscallElks(struct exe *e, int intno);
@@ -34,13 +33,14 @@ int handleSyscallDOS(struct exe *e, int intno);
 
 /* memory access functions */
 Byte readByte(Word offset, int seg);
-Word readWordSeg(Word offset, int seg);
+Word readWord(Word offset, int seg);
 void writeByte(Byte value, Word offset, int seg);
 void writeWord(Word value, Word offset, int seg);
 DWord physicalAddress(Word offset, int seg, int write);
 #define fRead   0x01
 #define fWrite  0x02
 void setShadowFlags(Word offset, int seg, int len, int flags);
+void setShadowCheck(bool on);
 
 #define INT0_DIV_ERROR  0
 #define INT3_BREAKPOINT 3

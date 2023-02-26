@@ -129,7 +129,7 @@ void loadExecutableDOS(struct exe *e, const char *path, int argc, char **argv, c
         for (int i = 0; i < hdr->e_crlc; ++i) {
             Word offset = r->r_offset;
             setCS(imageSegment + r->r_seg);
-            writeWord(readWordSeg(offset, CS) + imageSegment, offset, CS);
+            writeWord(readWord(offset, CS) + imageSegment, offset, CS);
             r++;
         }
         setES(imageSegment);

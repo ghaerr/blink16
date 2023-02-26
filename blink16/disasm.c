@@ -608,7 +608,7 @@ static void decode(struct dis *d)
                         outs(d, "div", BW|RM);
                         break;
                     case 7: // IDIV rmv
-                        outs(d, "ldiv", BW|RM);
+                        outs(d, "idiv", BW|RM);
                         break;
                 }
                 break;

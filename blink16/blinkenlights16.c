@@ -289,6 +289,10 @@ static const char kRegisterNames[3][16][4] = {
 
 extern char **environ;
 
+char *symtab;       // -S
+long Tsegment;      // -T
+long Dsegment;      // -D
+
 static bool belay;
 static bool react;
 bool tuimode;
@@ -2572,54 +2576,102 @@ static void OnDiskServiceBadCommand(void) {
   SetCarry(true);
 }
 
+static struct CHS {
+    ssize_t imagesize;
+    int C, H, S;
+} CHS[] = {
+    { 163840,  40, 1, 8 },
+    { 184320,  40, 1, 9 },
+    { 327680,  40, 2, 8 },
+    { 368640,  40, 2, 9 },
+    { 737280,  80, 2, 9 },
+    { 1228800, 80, 2, 15 },
+    { 1474560, 80, 2, 18 },
+    { 2949120, 80, 2, 36 }
+};
+
+static int CYLS = 1023;
+static int HEADS = 255;
+static int SECTS = 63;
+
+void determineCHS(ssize_t filesize) {
+  int i;
+  for(i=0; i<ARRAYLEN(CHS); i++) {
+    if (filesize == CHS[i].imagesize) {
+      CYLS = CHS[i].C;
+      HEADS = CHS[i].H;
+      SECTS = CHS[i].S;
+      return;
+    }
+  }
+}
+
 static void OnDiskServiceGetParams(void) {
   size_t lastsector, lastcylinder, lasthead;
-  lastcylinder = GetLastIndex(m->system->elf.mapsize, 512 * 63 * 255, 0, 1023);
-  lasthead = GetLastIndex(m->system->elf.mapsize, 512 * 63, 0, 255);
-  lastsector = GetLastIndex(m->system->elf.mapsize, 512, 1, 63);
+  lastcylinder = GetLastIndex(m->system->elf.mapsize, 512 * SECTS * HEADS, 0, 1023);
+  lasthead = GetLastIndex(m->system->elf.mapsize, 512 * SECTS, 0, HEADS);
+  lastsector = GetLastIndex(m->system->elf.mapsize, 512, 1, SECTS);
+  LOGF("DiskServiceGetParms drive %d C %d H %d S %d\n",
+    (int)m->dl, (int)lastcylinder, (int)lasthead, (int)lastsector);
+
+  if (m->dl != 0) {
+    SetCarry(true);
+    return;
+  }
   m->dl = 1;
   m->dh = lasthead;
   m->cl = lastcylinder >> 8 << 6 | lastsector;
   m->ch = lastcylinder;
+  m->bl = 4;        // CMOS drive type: 1.4M floppy
   m->ah = 0;
   m->es.sel = m->es.base = 0;
   Put16(m->di, 0);
   SetCarry(false);
 }
 
-static void OnDiskServiceReadSectors(void) {
+static void OnDiskServiceReadWriteSectors(bool write) {
   i64 addr, size;
   i64 sectors, drive, head, cylinder, sector, offset;
   sectors = m->al;
   drive = m->dl;
   head = m->dh;
-  cylinder = (m->cl & 192) << 2 | m->ch;
-  sector = (m->cl & 63) - 1;
+  cylinder = (m->cl & 0xc0) << 2 | m->ch;
+  sector = (m->cl & 0x3f) - 1;
   size = sectors * 512;
-  offset = sector * 512 + head * 512 * 63 + cylinder * 512 * 63 * 255;
-  (void)drive;
-  LOGF("bios read sectors %" PRId64 " "
+  offset = sector * 512 + head * 512 * SECTS + cylinder * 512 * HEADS * SECTS;
+
+  LOGF("bios %s sectors %" PRId64 " "
        "@ sector %" PRId64 " cylinder %" PRId64 " head %" PRId64
        " drive %" PRId64 " offset %#" PRIx64 "",
-       sectors, sector, cylinder, head, drive, offset);
+       write? "write":"read", sectors, sector, cylinder, head, drive, offset);
+  if (m->dl != 0) {
+    SetCarry(true);
+    return;
+  }
   if (0 <= sector && offset + size <= m->system->elf.mapsize) {
     addr = m->es.base + Get16(m->bx);
     if (addr + size <= kRealSize) {
-      SetWriteAddr(m, addr, size);
-      memcpy(m->system->real + addr, m->system->elf.map + offset, size);
-      m->ah = 0x00;
+      LOGF("bios read/write to ES:BX %04x:%04x", (unsigned)m->es.sel, Get16(m->bx));
+      if (write) {
+        SetReadAddr(m, addr, size);
+        memcpy(m->system->elf.map + offset, m->system->real + addr, size);
+      } else {
+        SetWriteAddr(m, addr, size);
+        memcpy(m->system->real + addr, m->system->elf.map + offset, size);
+      }
+      m->ah = 0x00;     // no error
       SetCarry(false);
     } else {
       m->al = 0x00;
-      m->ah = 0x02;
+      m->ah = 0x02;     // bad sector. FIXME check for best error code
       SetCarry(true);
     }
   } else {
-    LOGF("bios read sector failed 0 <= %" PRId64 " && %" PRIx64 " + %" PRIx64
+    LOGF("bios %s sector failed 0 <= %" PRId64 " && %" PRIx64 " + %" PRIx64
          " <= %lx",
-         sector, offset, size, m->system->elf.mapsize);
+         write? "write":"read", sector, offset, size, m->system->elf.mapsize);
     m->al = 0x00;
-    m->ah = 0x0d;
+    m->ah = 0x0d;       // invalid # sectors.
     SetCarry(true);
   }
 }
@@ -2691,7 +2743,8 @@ static void OnDiskService(void) {
       OnDiskServiceReset();
       break;
     case 0x02:
-      OnDiskServiceReadSectors();
+    case 0x03:
+      OnDiskServiceReadWriteSectors(m->ah == 0x03);
       break;
     case 0x08:
       OnDiskServiceGetParams();
@@ -2925,8 +2978,18 @@ static void OnInt15h(void) {
   }
 }
 
+static void OnInt12h(void) {
+  Put32(m->ax, 640);
+}
+
+static void OnInt1Ah(void) {
+  static unsigned int biosRTC;
+  biosRTC++;   // fake up BIOS RTC in CX:DX
+  Put16(m->dx, biosRTC >> 4);
+  Put16(m->cx, biosRTC >> 12);
+}
+
 extern bool OnHalt(int interrupt);
-static unsigned int biosRTC;
 
 bool OnHalt2(int interrupt) {
   LOGF("%" PRIx64 " %s OnHalt(%#x)", GetPc(m), tuimode ? "TUI" : "EXEC",
@@ -2937,6 +3000,9 @@ bool OnHalt2(int interrupt) {
     case 3:
       OnDebug();
       return false;
+    case 0x12:
+      OnInt12h();
+      return true;
     case 0x13:
       OnDiskService();
       return true;
@@ -2950,9 +3016,7 @@ bool OnHalt2(int interrupt) {
       OnKeyboardService();
       return true;
     case 0x1A:
-       biosRTC++;   // fake up BIOS RTC in CX:DX
-       Put16(m->dx, biosRTC >> 4);
-       Put16(m->cx, biosRTC >> 12);
+      OnInt1Ah();
       return true;
     case kMachineEscape:
       return true;
@@ -3293,7 +3357,7 @@ static void HandleKeyboard(const char *k) {
     CASE('d', OnDown());
     CASE('V', ++verbose);
     CASE('p', showprofile = !showprofile);
-    //CASE('B', PopBreakpoint(&breakpoints));
+    CASE('B', PopBreakpoint(&breakpoints));
     CASE('M', ToggleMouseTracking());
     CASE('\t', OnTab());
     CASE('\r', OnEnter());
@@ -3326,9 +3390,9 @@ static void HandleKeyboard(const char *k) {
             CASE('F', OnEnd());       /* \e[F  is end */
             CASE('H', OnHome());      /* \e[H  is home */
             CASE('1', OnHome());      /* \e[1~ is home */
-            CASE('4', OnEnd());       /* \e[1~ is end */
-            CASE('5', OnPageUp());    /* \e[1~ is pgup */
-            CASE('6', OnPageDown());  /* \e[1~ is pgdn */
+            CASE('4', OnEnd());       /* \e[4~ is end */
+            CASE('5', OnPageUp());    /* \e[5~ is pgup */
+            CASE('6', OnPageDown());  /* \e[6~ is pgdn */
             default:
               break;
           }
@@ -3363,7 +3427,7 @@ static i64 ParseHexValue(const char *s) {
   char *ep;
   i64 x;
   x = strtoll(s, &ep, 16);
-  if (*ep) {
+  if (*ep != 0 && *ep != ':') {
     fputs("ERROR: bad hexadecimal: ", stderr);
     fputs(s, stderr);
     fputc('\n', stderr);
@@ -3376,7 +3440,8 @@ static void HandleBreakpointFlag(const char *s) {
   struct Breakpoint b;
   memset(&b, 0, sizeof(b));
   if (isdigit(*s)) {
-    b.addr = ParseHexValue(s);
+    b.seg = ParseHexValue(s);
+    b.addr = ParseHexValue(s+5);    //FIXME requires 0000: before offset
   } else {
     b.symbol = optarg_;
   }
@@ -3456,7 +3521,7 @@ static void Exec(void) {
   if (!(interrupt = sigsetjmp(m->onhalt, 1))) {
     m->canhalt = true;
     if (!(action & CONTINUE) &&
-        (bp = IsAtBreakpoint(&breakpoints, m->cs.base + m->ip)) != -1) {
+        (bp = IsAtBreakpoint(&breakpoints, m->cs.sel, m->ip)) != -1) {
       LOGF("BREAK1 %0*" PRIx64 "", GetAddrHexWidth(), breakpoints.p[bp].addr);
     ReactToPoint:
       tuimode = true;
@@ -3482,7 +3547,7 @@ static void Exec(void) {
       action &= ~CONTINUE;
       for (;;) {
         LoadInstruction(m, GetPc(m));
-        if ((bp = IsAtBreakpoint(&breakpoints, m->cs.base + m->ip)) != -1) {
+        if ((bp = IsAtBreakpoint(&breakpoints, m->cs.sel,  m->ip)) != -1) {
           LOGF("BREAK2 %0*" PRIx64 "", GetAddrHexWidth(),
                breakpoints.p[bp].addr);
           action &= ~(FINISH | NEXT | CONTINUE);
@@ -3521,6 +3586,7 @@ static void Exec(void) {
             LOGF("REACT");
             action &= ~(INT | STEP | FINISH | NEXT);
             tuimode = true;
+            break;  // FIXME PR
           } else {
             action &= ~INT;
             //EnqueueSignal(m, SIGINT_LINUX);
@@ -3558,10 +3624,11 @@ static void Tui(void) {
       if (!(action & FAILURE)) {
         LoadInstruction(m, GetPc(m));
         if ((action & (FINISH | NEXT | CONTINUE)) &&
-            (bp = IsAtBreakpoint(&breakpoints, m->cs.base + m->ip)) != -1) {
+            (bp = IsAtBreakpoint(&breakpoints, m->cs.sel, m->ip)) != -1) {
           action &= ~(FINISH | NEXT | CONTINUE);
           LOGF("BREAK %0*" PRIx64 "", GetAddrHexWidth(),
                breakpoints.p[bp].addr);
+          ReactiveDraw();   // FIXME PR
         }
 #if !BLINK16
         else if ((action & (FINISH | NEXT | CONTINUE)) &&
@@ -3710,8 +3777,17 @@ static void GetOpts(int argc, char *argv[]) {
   bool wantjit = false;
   bool wantunsafe = false;
   const char *logpath = 0;
-  while ((opt = GetOpt(argc, argv, "hjmCvtrzRNsb:Hw:L:")) != -1) {
+  while ((opt = GetOpt(argc, argv, "S:T:D:hjmCvtrzRNsb:Hw:L:")) != -1) {
     switch (opt) {
+      case 'S':
+        symtab = optarg_;
+        break;
+      case 'T':
+        Tsegment = strtol(optarg_, NULL, 16);
+        break;
+      case 'D':
+        Dsegment = strtol(optarg_, NULL, 16);
+        break;
       case 'j':
         wantjit = true;
         break;
@@ -3837,9 +3913,16 @@ int VirtualMachine(int argc, char *argv[]) {
       }
     } while (!(action & (RESTART | EXIT)));
   } while (action & RESTART);
-  //if (m->system->elf.ehdr) {
-    //unassert(!Munmap(m->system->elf.ehdr, m->system->elf.size));
-  //}
+#if BLINK16
+  if (m->metal) {
+    unassert(!msync(m->system->elf.map, m->system->elf.mapsize, MS_SYNC));
+    unassert(!munmap(m->system->elf.map, m->system->elf.mapsize));
+  }
+#else
+  if (m->system->elf.ehdr) {
+    unassert(!Munmap(m->system->elf.ehdr, m->system->elf.size));
+  }
+#endif
   //DisFree(dis);
   return exitcode;
 }

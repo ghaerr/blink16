@@ -11,8 +11,13 @@
 #include <stdarg.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include "8086.h"
 #include "exe.h"
+
+#if BLINK16
+#include "blink/machine.h"
+#endif
 
 static void loadError(const char *msg, ...)
 {
@@ -36,8 +41,9 @@ int handleSyscallBinary(struct exe *e, int intno)
 void loadExecutableBinary(struct exe *e, const char *path, int argc, char **argv, char **envp)
 {
     struct stat sbuf;
+    extern void determineCHS(ssize_t filesize);
 
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDWR);
     if (fd < 0)
         loadError("Can't open %s\n", path);
     if (fstat(fd, &sbuf) < 0)
@@ -45,19 +51,28 @@ void loadExecutableBinary(struct exe *e, const char *path, int argc, char **argv
     size_t filesize = sbuf.st_size;
     Word loadSegment = 0x07c0;
     int loadOffset = loadSegment << 4;
-    if (filesize > RAMSIZE - loadOffset)
-        loadError("Not enough memory to load %s, needs %d bytes have %d\n",
-            path, filesize, RAMSIZE);
-    if (read(fd, &ram[loadOffset], filesize) != filesize)
+    if (read(fd, &ram[loadOffset], 512) != 512)
         loadError("Error reading executable: %s\n", path);
+#if BLINK16
+    void *addr = mmap(0, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (addr == MAP_FAILED)
+        loadError("Can't map executable: %s error %d\n", path, errno);
+    g_machine->system->elf.map = (char *)addr;
+    g_machine->system->elf.mapsize = filesize;
+    determineCHS(filesize);
+#endif
     close(fd);
 
+#if 1
+    setShadowCheck(false);
+#else
     setES(0x0000);
     setShadowFlags(0, ES, 0x10000, fRead|fWrite);
     setES(0x1000);
     setShadowFlags(0, ES, 0x10000, fRead|fWrite);
     setES(0xB000);
     setShadowFlags(0, ES, 0x20000, fRead|fWrite);
+#endif
 
     setES(0x0000);
     setDS(0x0000);

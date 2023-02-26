@@ -7,6 +7,9 @@
 
 struct Breakpoint {
   i64 addr;
+#if BLINK16
+  u16 seg;
+#endif
   const char *symbol;
   bool disable;
   bool oneshot;
@@ -17,7 +20,7 @@ struct Breakpoints {
   struct Breakpoint *p;
 };
 
-ssize_t IsAtBreakpoint(struct Breakpoints *, i64);
+ssize_t IsAtBreakpoint(struct Breakpoints *, u16, i64);
 ssize_t PushBreakpoint(struct Breakpoints *, struct Breakpoint *);
 void PopBreakpoint(struct Breakpoints *);
 
