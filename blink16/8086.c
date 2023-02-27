@@ -48,14 +48,14 @@ static bool running;
 static bool prefix;
 static bool repeating;
 static int rep;
-static int ios;
+//static int ios;
 static struct exe *ep;
 
 static inline Word rw(void)          { return registers[opcode & 7]; }
 static inline void setRW(Word value) { registers[opcode & 7] = value; }
 static inline void setRB(Byte value) { *byteRegisters[opcode & 7] = value; }
 
-int initMachine(struct exe *e)
+void initMachine(struct exe *e)
 {
     memset(ram, 0, sizeof(ram));
     memset(shadowRam, 0, sizeof(shadowRam));
@@ -74,8 +74,6 @@ int initMachine(struct exe *e)
     int byteNumbers[8] = {0, 2, 4, 6, 1, 3, 5, 7};
     for (int i = 0 ; i < 8; ++i)
         byteRegisters[i] = &byteData[byteNumbers[i] ^ bigEndian];
-
-    return 0;
 }
 
 void initExecute(void)
@@ -146,7 +144,7 @@ DWord physicalAddress(Word offset, int seg, int write)
     int flags;
     static char *segname[4] = { "ES", "CS", "SS", "DS" };
 
-    ios++;
+    //ios++;
     if (seg == -1) {
         seg = segment;
         if (segmentOverride != -1)
@@ -234,7 +232,6 @@ static Word signExtend(Byte data) { return data + (data < 0x80 ? 0 : 0xff00); }
 static int modRMReg() { return (modRM >> 3) & 7; }
 static void doJump(Word newIP)
 {
-    /*printf("\n");*/
     ip = newIP;
 }
 static void jumpShort(Byte data, bool jump)
@@ -242,12 +239,12 @@ static void jumpShort(Byte data, bool jump)
     if (jump)
         doJump(ip + signExtend(data));
 }
-int isRepeating(void) { return repeating; }
+bool isRepeating(void) { return repeating; }
 Word getIP(void) { return ip; }
 Word getFlags(void) { return flags; }
 void setIP(Word w) { ip = w; }
 void setFlags(Word w) { flags = w; }
-void setCF(int cf) { flags = (flags & ~1) | (cf ? 1 : 0); }
+void setCF(bool cf) { flags = (flags & ~1) | (cf ? 1 : 0); }
 static void setAF(bool af) { flags = (flags & ~0x10) | (af ? 0x10 : 0); }
 static void clearCA() { setCF(false); setAF(false); }
 static void setOF(bool of) { flags = (flags & ~0x800) | (of ? 0x800 : 0); }

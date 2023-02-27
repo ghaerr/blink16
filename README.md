@@ -23,6 +23,12 @@ cd blink16
 ./blink16 banner ELKS   # ELKS binary
 ./blink16 test.exe      # DOS binary
 ```
+
+To demo booting a prebuilt ELKS kernel from 0:7c00 (use s/s/c/^C/C/C/D to step through, and mousewheel on disassembly to show execution history):
+```
+make elks
+```
+
 Screenshot of Blink16 running 'banner':
 ![Screenshot of Blink16 running banner](blink16/blink16-banner.png)
 

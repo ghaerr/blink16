@@ -22,7 +22,7 @@ extern int f_verbose;
 #endif
 
 /* return true on stack overflow */
-int checkStackElks(struct exe *e)
+bool checkStackElks(struct exe *e)
 {
     return (e->t_stackLow && ((DWord)ss() << 4) + sp() < e->t_stackLow);
     //return (e->t_minstack && sp() < e->t_begstack - e->t_minstack);
@@ -109,7 +109,7 @@ static int SysSbrk(struct exe *e, int incr, int offset_result)
 #define rptr(off)     ((char *)&ram[physicalAddress(off, SS, false)])
 #define wptr(off)     ((char *)&ram[physicalAddress(off, SS, true)])
 
-int handleSyscallElks(struct exe *e, int intno)
+bool handleSyscallElks(struct exe *e, int intno)
 {
     unsigned int AX = ax();
     unsigned int BX = bx();
@@ -133,8 +133,8 @@ int handleSyscallElks(struct exe *e, int intno)
     default:
         runtimeError("Unknown SYS call %d: AX %04x BX %04x CX %04x DX %04x\n",
             AX, AX, BX, CX, DX);
-        return 0;
+        return false;
     }
     setAX(AX);
-    return 1;
+    return true;
 }

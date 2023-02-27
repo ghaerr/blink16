@@ -100,7 +100,7 @@ static int getDescriptor()
     return oldCount;
 }
 
-int checkStackDOS(struct exe *e)
+bool checkStackDOS(struct exe *e)
 {
     return (e->t_stackLow && ((DWord)ss() << 4) + sp() <= e->t_stackLow);
 }
@@ -123,7 +123,7 @@ static int SysWrite(struct exe *e, int fd, char *buf, size_t n)
 #endif
 }
 
-int handleSyscallDOS(struct exe *e, int intno)
+bool handleSyscallDOS(struct exe *e, int intno)
 {
         int fileDescriptor;
         char *p, *addr;
@@ -365,7 +365,7 @@ int handleSyscallDOS(struct exe *e, int intno)
                     default:
                         runtimeError("Unknown DOS/BIOS call: int 0x%02x, "
                             "ah = 0x%02x", intno, (unsigned)ah());
-                        return 0;
+                        return false;
                 }
-                return 1;
+                return true;
 }

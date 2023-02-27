@@ -17,19 +17,19 @@ extern Byte ram[RAMSIZE];
 
 /* emulator operation */
 struct exe;                     /* defined in exe.h */
-int initMachine(struct exe *e);
+void initMachine(struct exe *e);
 void initExecute(void);
 void executeInstruction(void);
-int isRepeating(void);
+bool isRepeating(void);
 
 /* emulator callouts */
 void runtimeError(const char *msg, ...);
-int canHandleInterrupt(struct exe *e, int intno);
-int handleInterrupt(struct exe *e, int intno);
-int checkStackElks(struct exe *e);
-int checkStackDOS(struct exe *e);
-int handleSyscallElks(struct exe *e, int intno);
-int handleSyscallDOS(struct exe *e, int intno);
+bool canHandleInterrupt(struct exe *e, int intno);
+bool handleInterrupt(struct exe *e, int intno);
+bool checkStackElks(struct exe *e);
+bool checkStackDOS(struct exe *e);
+bool handleSyscallElks(struct exe *e, int intno);
+bool handleSyscallDOS(struct exe *e, int intno);
 
 /* memory access functions */
 Byte readByte(Word offset, int seg);
@@ -91,4 +91,4 @@ Word getIP(void);
 void setIP(Word w);
 void setFlags(Word w);
 Word getFlags(void);
-void setCF(int cf);
+void setCF(bool cf);

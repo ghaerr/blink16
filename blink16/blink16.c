@@ -196,7 +196,7 @@ bool OnHalt(int interrupt)
     return ret;
 }
 
-int canHandleInterrupt(struct exe *e, int intno)
+bool canHandleInterrupt(struct exe *e, int intno)
 {
     switch (intno) {
     case 0x80:      // ELKS syscall
@@ -215,7 +215,7 @@ int canHandleInterrupt(struct exe *e, int intno)
     }
 }
 
-int handleInterrupt(struct exe *e, int intno)
+bool handleInterrupt(struct exe *e, int intno)
 {
     switch (intno) {
     case INT0_DIV_ERROR:

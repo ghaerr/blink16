@@ -28,14 +28,14 @@ static void loadError(const char *msg, ...)
     exit(1);
 }
 
-int checkStackBinary(struct exe *e)
+bool checkStackBinary(struct exe *e)
 {
-    return 0;
+    return false;
 }
 
-int handleSyscallBinary(struct exe *e, int intno)
+bool handleSyscallBinary(struct exe *e, int intno)
 {
-    return 0;
+    return false;
 }
 
 void loadExecutableBinary(struct exe *e, const char *path, int argc, char **argv, char **envp)

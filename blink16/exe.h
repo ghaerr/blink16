@@ -3,6 +3,7 @@
 /* ELKS a.out and DOS MZ headers */
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /* minimal ELKS header */
 struct minix_exec_hdr {
@@ -70,8 +71,8 @@ struct exe {
     struct minix_exec_hdr aout;
     struct elks_supl_hdr eshdr;
     struct image_dos_header dos;
-    int (*checkStack)(struct exe *e);
-    int (*handleSyscall)(struct exe *e, int intno);
+    bool (*checkStack)(struct exe *e);
+    bool (*handleSyscall)(struct exe *e, int intno);
     /* disassembly */
     unsigned char * syms;       /* symbol table */
     uint16_t textseg;           /* text and data segments */
