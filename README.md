@@ -32,7 +32,7 @@ make elks
 Screenshot of Blink16 running 'banner':
 ![Screenshot of Blink16 running banner](blink16/blink16-banner.png)
 
-A big thank you to @jart for the wonderful Blink Project!!
+A big thank you to [@jart](https://github.com/jart) for the wonderful Blink Project!!
 
 Screenshot of Blink running GCC 9.4.0:
 ![Screenshot of Blink running GCC 9.4.0](blink/blink-gcc.png)
