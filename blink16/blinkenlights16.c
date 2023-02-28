@@ -2580,22 +2580,28 @@ static struct CHS {
     ssize_t imagesize;
     int C, H, S;
 } CHS[] = {
-    { 163840,  40, 1, 8 },
-    { 184320,  40, 1, 9 },
-    { 327680,  40, 2, 8 },
-    { 368640,  40, 2, 9 },
-    { 737280,  80, 2, 9 },
-    { 1228800, 80, 2, 15 },
-    { 1474560, 80, 2, 18 },
-    { 2949120, 80, 2, 36 }
+    {  163840,  40, 1,  8 },
+    {  184320,  40, 1,  9 },
+    {  327680,  40, 2,  8 },
+    {  368640,  40, 2,  9 },
+    {  737280,  80, 2,  9 },
+    {  1228800, 80, 2, 15 },
+    {  1474560, 80, 2, 18 },
+    {  2949120, 80, 2, 36 },
+    { 32514048, 63,16, 63 },    // hd32
+    { 32546304, 63,16, 63 },    // hd32mbr
+    { 65544192,127,16, 63 }     // hd64
 };
 
 static int CYLS = 1023;
 static int HEADS = 255;
 static int SECTS = 63;
+static int diskimagesize;
 
 void determineCHS(ssize_t filesize) {
   int i;
+
+  diskimagesize = filesize;
   for(i=0; i<ARRAYLEN(CHS); i++) {
     if (filesize == CHS[i].imagesize) {
       CYLS = CHS[i].C;
@@ -2609,12 +2615,13 @@ void determineCHS(ssize_t filesize) {
 static void OnDiskServiceGetParams(void) {
   size_t lastsector, lastcylinder, lasthead;
   lastcylinder = GetLastIndex(m->system->elf.mapsize, 512 * SECTS * HEADS, 0, 1023);
-  lasthead = GetLastIndex(m->system->elf.mapsize, 512 * SECTS, 0, HEADS);
+  lasthead = GetLastIndex(m->system->elf.mapsize, 512 * SECTS, 0, HEADS-1);
   lastsector = GetLastIndex(m->system->elf.mapsize, 512, 1, SECTS);
   LOGF("DiskServiceGetParms drive %d C %d H %d S %d\n",
     (int)m->dl, (int)lastcylinder, (int)lasthead, (int)lastsector);
 
-  if (m->dl != 0) {
+  unsigned char d = diskimagesize > 2949120? 0x80: 0;
+  if (m->dl != d) {
     SetCarry(true);
     return;
   }
@@ -2644,7 +2651,9 @@ static void OnDiskServiceReadWriteSectors(bool write) {
        "@ sector %" PRId64 " cylinder %" PRId64 " head %" PRId64
        " drive %" PRId64 " offset %#" PRIx64 "",
        write? "write":"read", sectors, sector, cylinder, head, drive, offset);
-  if (m->dl != 0) {
+
+  unsigned char d = diskimagesize > 2949120? 0x80: 0;
+  if (m->dl != d) {
     SetCarry(true);
     return;
   }
@@ -2663,7 +2672,7 @@ static void OnDiskServiceReadWriteSectors(bool write) {
       SetCarry(false);
     } else {
       m->al = 0x00;
-      m->ah = 0x02;     // bad sector. FIXME check for best error code
+      m->ah = 0x02;     // bad sector.
       SetCarry(true);
     }
   } else {

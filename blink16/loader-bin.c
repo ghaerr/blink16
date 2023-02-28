@@ -83,7 +83,7 @@ void loadExecutableBinary(struct exe *e, const char *path, int argc, char **argv
     setAX(0x0000);
     setBX(0x0000);
     setCX(0x0000);
-    setDX(0x0000);
+    setDX(filesize > 2949120? 0x0080: 0x0000);
     setBP(0x0000);
     setSI(0x0000);
     setDI(0x0000);
