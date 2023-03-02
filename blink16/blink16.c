@@ -20,7 +20,7 @@
 
 static unsigned char f_showreps = 0;    /* show each rep instruction cycle */
 static struct dis dis8086;
-static struct exe exe8086;
+struct exe exe8086;
 
 void runtimeError(const char *msg, ...)
 {

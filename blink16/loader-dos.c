@@ -1,4 +1,8 @@
-/* DOS executable loader for 8086 emulator */
+/*
+ * DOS executable loader for 8086 emulator
+ *
+ * From sim86 enhancements by TK Chia
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -192,7 +196,7 @@ void loadExecutableDOS(struct exe *e, const char *path, int argc, char **argv, c
     setBX(0x0000);
     setCX(0x0000);
     setDX(0x0000);
-    setBP(0x091C);
+    setBP(0x0000);      // was 0x091C, set to 0 for stack walking
     setSI(0x0100);
     setDI(0xFFFE);
     setFlags(0xF202);   /* Interrupts enabled and 8086 reserved bits on */

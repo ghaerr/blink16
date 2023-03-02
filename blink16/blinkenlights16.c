@@ -80,6 +80,9 @@
 
 #if BLINK16
 #include "8086.h"
+#include "exe.h"            //FIXME remove if possible
+#include "syms.h"           //FIXME remove if possible
+extern struct exe exe8086;  //FIXME remove if possible
 #endif
 
 #define USAGE \
@@ -846,6 +849,7 @@ static void BreakAtNextInstruction(void) {
   struct Breakpoint b;
   memset(&b, 0, sizeof(b));
   b.addr = GetPc(m) + /* m->xedd->length */ + m->oplen;
+  b.seg = m->cs.sel;
   b.oneshot = true;
   PushBreakpoint(&breakpoints, &b);
   LOGF("set Breakpoint at %08x\n", (int)b.addr);
@@ -1711,6 +1715,7 @@ static void DrawMaps(struct Panel *p) {
   }
   free(text);
 }
+#endif
 
 static void DrawBreakpoints(struct Panel *p) {
   i64 addr;
@@ -1718,6 +1723,7 @@ static void DrawBreakpoints(struct Panel *p) {
   char *s, buf[256];
   i64 i, sym, line = 0;
   if (p->top == p->bottom) return;
+#if !BLINK16
   for (i = watchpoints.i; i--;) {
     if (watchpoints.p[i].disable) continue;
     if (line >= breakpointsstart) {
@@ -1736,12 +1742,14 @@ static void DrawBreakpoints(struct Panel *p) {
     }
     ++line;
   }
+#endif
   for (i = breakpoints.i; i--;) {
     if (breakpoints.p[i].disable) continue;
     if (line >= breakpointsstart) {
       addr = breakpoints.p[i].addr;
-      sym = DisFindSym(dis, addr);
-      name = sym != -1 ? dis->syms.stab + dis->syms.p[sym].name : "UNKNOWN";
+      //sym = DisFindSym(dis, addr);
+      //name = sym != -1 ? dis->syms.stab + dis->syms.p[sym].name : "UNKNOWN";
+      name = sym_text_symbol(&exe8086, addr, 1);
       s = buf;
       s += sprintf(s, "%0*" PRIx64 " ", GetAddrHexWidth(), addr);
       strcpy(s, name);
@@ -1762,57 +1770,143 @@ static int GetPreferredStackAlignmentMask(void) {
     case XED_MODE_LEGACY:
       return 3;
     case XED_MODE_REAL:
-      return 3;
+      return 1;         // FIXME PR
     default:
       __builtin_unreachable();
   }
 }
 
+#if BLINK16
+/* ia-16 C function stack layout (hi to low):
++--------------+
+| arg1         | bp[4]
++--------------+
+| ret addr     | bp[3]
++--------------+
+| si           | bp[2] (optional, always 1st push)
++--------------+
+| di           | bp[1] (optional)
++--------------+
+| bp           | bp[0], <- BP (optional, always last push)
++--------------+
+| temp vars    | bp[-1], <- SP
++--------------+
+*/
+
+/* calc_push_count returns */
+#define BP_PUSHED   0x0100
+#define DI_PUSHED   0x0200
+#define SI_PUSHED   0x0400
+#define COUNT_MASK  0x0007
+
+/*
+ * Return pushed word count and register bitmask by function at passed address,
+ * used to traverse BP chain and display registers.
+ */
+int getFunctionPushCount(u16 addr)
+{
+    int fp = sym_fn_start_address(&exe8086, addr);   /* get fn start from address */
+    int count = 0;
+
+    if (fp == -1) return 0;
+    int opcode = readByte(fp++, CS);
+    if (opcode == 0x56)         /* push %si */
+        count = (count+1) | SI_PUSHED, opcode = readByte(fp++, CS);
+    if (opcode == 0x57)         /* push %di */
+        count = (count+1) | DI_PUSHED, opcode = readByte(fp++, CS);
+    if (opcode == 0x55          /* push %bp */
+        || (opcode == 0x59 && (int)fp < 0x40)) /* temp kluge for crt0.S 'pop %cx' start */
+        count = (count + 1) | BP_PUSHED, opcode = readByte(fp, CS);
+    return count;
+}
+
+static int STACKCOLS = 8;   /* # of stack address columns */
+
+/* display stack line and any subsequent lines w/o BP pushed */
+static char * printStackLine(char *buf, int level, i64 addr, i64 fn, int flag)
+{
+    char *p = buf;
+    int j = 0;
+
+    p += sprintf(p, "%2d: %04x =>", level, (unsigned)addr);
+    do {
+        if ((j == 0 && !(flag & BP_PUSHED))
+         || (j == 1 && !(flag & DI_PUSHED))
+         || (j == 2 && !(flag & SI_PUSHED)))
+            p += sprintf(p, "     ");
+        else {
+            p += sprintf(p, " %04x", readWord(addr, SS));
+            addr += 2;
+        }
+    } while (++j < STACKCOLS);
+    p += sprintf(p, " %s", sym_text_symbol(&exe8086, fn, 1));
+    if (!(flag & BP_PUSHED))
+        p += sprintf(p, "*");
+    p += sprintf(p, " (%04x)", (unsigned)fn);
+    return p;
+}
+
+
 static void DrawFrames(struct Panel *p) {
   int i;
-  i64 sym;
-  u8 *r;
-  const char *name;
   char *s, line[256];
-  i64 sp, bp, rp;
+  u16 sp, bp, fn, addr;
   if (p->top == p->bottom) return;
-  rp = m->ip;
-  bp = Read64(m->bp);
-  sp = Read64(m->sp);
-  for (i = 0; i < p->bottom - p->top;) {
-    sym = DisFindSym(dis, rp);
-    name = sym != -1 ? dis->syms.stab + dis->syms.p[sym].name : "UNKNOWN";
+  int w = p->right - p->left;
+  STACKCOLS = w > 60? 8: w > 50? 6: 4;
+  fn = m->ip;
+  addr = bp = Read16(m->bp);
+  sp = Read16(m->sp);
+  if (!addr) addr = sp;
+  sprintf(line, "    Addr    BP   DI   SI   Ret "); AppendPanel(p, 0, line);
+  sprintf(line, "    ~~~~    ~~~~~~~~~~~~~~~~~~~"); AppendPanel(p, 1, line);
+  if (STACKCOLS > 4) {
+    sprintf(line, " Arg  Arg2"); AppendPanel(p, 0, line);
+    sprintf(line, "~~~~~~~~~~"); AppendPanel(p, 1, line);
+  }
+  if (STACKCOLS > 6) {
+    sprintf(line, " Arg3 Arg4"); AppendPanel(p, 0, line);
+    sprintf(line, "~~~~~~~~~~"); AppendPanel(p, 1, line);
+  }
+  for (i = 2; i-2 < p->bottom - p->top;) {
+    //sym = DisFindSym(dis, rp);
+    //name = sym != -1 ? dis->syms.stab + dis->syms.p[sym].name : "UNKNOWN";
+    int flag = getFunctionPushCount(fn);
+    int prev = flag;
     s = line;
-    s += sprintf(s, "%0*" PRIx64 " %0*" PRIx64 " ", GetAddrHexWidth(),
-                 m->ss.base + bp, GetAddrHexWidth(), rp);
-    s = Demangle(s, name, DIS_MAX_SYMBOL_LENGTH);
+    s = printStackLine(s, i-2, addr, fn, flag);
     AppendPanel(p, i - framesstart, line);
-    if (sym != -1 && rp != dis->syms.p[sym].addr) {
-      snprintf(line, sizeof(line), "+%#" PRIx64 "", rp - dis->syms.p[sym].addr);
-      AppendPanel(p, i - framesstart, line);
-    }
-    if (!bp) break;
-    if (bp < sp) {
+    if (fn == 0)
+      break;
+    if (bp != 0 && bp < sp) {
       AppendPanel(p, i - framesstart, " [STRAY]");
-    } else if (bp - sp <= 0x1000) {
-      snprintf(line, sizeof(line), " %" PRId64 " bytes", bp - sp);
-      AppendPanel(p, i - framesstart, line);
     }
-    if (bp & GetPreferredStackAlignmentMask() && i) {
+    //else if (bp - sp <= 0x1000) {
+      //snprintf(line, sizeof(line), " %" PRId64 " bytes", bp - sp);
+      //AppendPanel(p, i - framesstart, line);
+    //}
+    if (bp & 1 && i-2) {
       AppendPanel(p, i - framesstart, " [MISALIGN]");
     }
     ++i;
-    if (((m->ss.base + bp) & 0xfff) > 0xff0) break;
-    if (!(r = LookupAddress(m, m->ss.base + bp))) {
-      AppendPanel(p, i - framesstart, "CORRUPT FRAME POINTER");
-      break;
+    //if (((m->ss.base + bp) & 0xfff) > 0xff0) break;
+    //if (!(r = LookupAddress(m, m->ss.base + bp))) {
+      //AppendPanel(p, i - framesstart, "CORRUPT FRAME POINTER");
+      //break;
+    //}
+    fn = readWord(addr + 2 * ((flag & COUNT_MASK) + 0), SS);
+    flag = getFunctionPushCount(fn);
+    if (flag & BP_PUSHED) {                     /* caller pushed BP */
+      addr = bp = readWord(bp, SS);
+      sp = bp;
+    } else {
+      addr += 2 * ((prev & COUNT_MASK) + 1);    /* skip past last ret addr */
     }
-    sp = bp;
-    bp = ReadWord(r + 0);
-    rp = ReadWord(r + 8);
   }
 }
+#endif
 
+#if !BLINK16
 static void CheckFramePointerImpl(void) {
   u8 *r;
   i64 bp, rp;
@@ -2093,8 +2187,10 @@ static void Redraw(bool force) {
   } else {
     DrawFrames(&pan.frames);
   }
-  DrawBreakpoints(&pan.breakpoints);
+#else
+  DrawFrames(&pan.frames);
 #endif
+  DrawBreakpoints(&pan.breakpoints);
   DrawMemory(&pan.code, &codeview, GetPc(m), GetPc(m) + m->xedd->length);
   DrawMemory(&pan.readdata, &readview, readaddr, readaddr + readsize);
   DrawMemory(&pan.writedata, &writeview, writeaddr, writeaddr + writesize);
@@ -2594,7 +2690,7 @@ static struct CHS {
 };
 
 static int CYLS = 1023;
-static int HEADS = 255;
+static int HEADS = 16;          // 255 limit for DOS <= 7.10, ATA limit is 16
 static int SECTS = 63;
 static int diskimagesize;
 
