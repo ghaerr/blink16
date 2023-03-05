@@ -46,8 +46,9 @@ all: blink16
 blink16: $(BLINK16_SOURCE) $(BLINK_SOURCE)
 	gcc -DBLINK16=1 -DNOJIT=1 -I.. -Os -o $@ $^ -lz -lm
 
+# the -T (.text) and -D (.data) parameters are taken from the ELKS boot screen
 elks: blink16
-	./blink16 -S system.sym -T 00d0 -D 0c39 -b 00d0:0000 -b 00d0:12b0 -b 2d00:0000 fd1440.img
+	./blink16 -S system.sym -T 00d0 -D 0c39 -b _start -b mount_root -b 2d00:0000 fd1440.img
 
 clean:
 	rm -f blink16

@@ -837,13 +837,19 @@ static void TuiCleanup(void) {
   // LeaveScreen();
 }
 
-#if !BLINK16
 static void ResolveBreakpoints(void) {
   long i, sym;
   for (i = 0; i < breakpoints.i; ++i) {
     if (breakpoints.p[i].symbol && !breakpoints.p[i].addr) {
+#if BLINK16
+       u16 addr = sym_address(&exe8086, breakpoints.p[i].symbol);
+       if (addr != 0xffff) {
+         breakpoints.p[i].addr = addr;
+         breakpoints.p[i].seg = Tsegment;
+#else
       if ((sym = DisFindSymByName(dis, breakpoints.p[i].symbol)) != -1) {
         breakpoints.p[i].addr = dis->syms.p[sym].addr;
+#endif
       } else {
         fprintf(stderr,
                 "error: breakpoint not found: %s (out of %d loaded symbols)\n",
@@ -854,6 +860,7 @@ static void ResolveBreakpoints(void) {
   }
 }
 
+#if !BLINK16
 static void ResolveWatchpoints(void) {
   long i, sym;
   for (i = 0; i < watchpoints.i; ++i) {
@@ -931,7 +938,7 @@ void CommonSetup(void) {
   if (!once) {
     if (tuimode || breakpoints.i || watchpoints.i) {
       LoadSyms();
-      //ResolveBreakpoints();
+      ResolveBreakpoints();
       //ResolveWatchpoints();
     }
     once = true;

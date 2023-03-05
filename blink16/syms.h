@@ -41,5 +41,6 @@ char * noinstrument sym_data_symbol(struct exe *e, addr_t addr, int exact);
 char * noinstrument sym_symbol(struct exe *e, addr_t addr, int exact);
 addr_t  noinstrument sym_fn_start_address(struct exe *e, addr_t addr);
 unsigned char * noinstrument sym_next_text_entry(struct exe *e, unsigned char *entry);
+addr_t noinstrument sym_address(struct exe *e, const char *name);
 
 #endif /* SYMS_H_ */

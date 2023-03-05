@@ -124,6 +124,24 @@ unsigned char * noinstrument sym_next_text_entry(struct exe *e, unsigned char *e
      return 0;
 }
 
+/* return symbol address */
+addr_t noinstrument sym_address(struct exe *e, const char *name)
+{
+    unsigned char *p, *lastp;
+    int len;
+
+    p = e->syms;
+    if (!p) return -1;
+
+    len = strlen(name);
+    do {
+        if (symLen(p) == len && !strncmp(symName(p), name, len))
+            return symAddr(p);
+        p = symNext(p);
+    } while (p);
+    return symAddr(lastp);
+}
+
 /* map .text address to function start address */
 addr_t  noinstrument sym_fn_start_address(struct exe *e, addr_t addr)
 {
