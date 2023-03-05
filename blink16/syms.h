@@ -14,12 +14,17 @@
  *      0       end of symbol table
  */
 
-#define next(sym)   \
-    ((sym) + 1 + sizeof(unsigned short) + ((unsigned char *)sym)[SYMLEN] + 1)
 #define TYPE        0
 #define ADDR        1
 #define SYMLEN      3
 #define SYMBOL      4
+
+/* raw access functions */
+#define symNext(p)  (((unsigned char *)p) + 1 + 2 + symLen(p) + 1)
+#define symType(p)  (((unsigned char *)p)[TYPE])
+#define symAddr(p)  ((unsigned short)(((unsigned char *)p)[ADDR] | (((unsigned char *)p)[ADDR+1] << 8)))
+#define symLen(p)   (((unsigned char *)p)[SYMLEN])
+#define symName(p)  (((char *)p) + SYMBOL)
 
 #ifndef noinstrument
 #define noinstrument    __attribute__((no_instrument_function))
@@ -35,5 +40,6 @@ char * noinstrument sym_ftext_symbol(struct exe *e, addr_t addr, int exact);
 char * noinstrument sym_data_symbol(struct exe *e, addr_t addr, int exact);
 char * noinstrument sym_symbol(struct exe *e, addr_t addr, int exact);
 addr_t  noinstrument sym_fn_start_address(struct exe *e, addr_t addr);
+unsigned char * noinstrument sym_next_text_entry(struct exe *e, unsigned char *entry);
 
 #endif /* SYMS_H_ */

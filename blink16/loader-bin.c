@@ -74,6 +74,11 @@ void loadExecutableBinary(struct exe *e, const char *path, int argc, char **argv
     setShadowFlags(0, ES, 0x20000, fRead|fWrite);
 #endif
 
+    // Fill up parts of the BIOS Data Area
+    setES(0x0000);
+    //setShadowFlags(0x0400, ES, 2, fRead);
+    writeWord(0x003D, 0x0410, ES);  // IPL disks = 1 required for ELKS getfdinfo
+
     setES(0x0000);
     setDS(0x0000);
     setSS(0x0000);

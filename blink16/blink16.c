@@ -247,7 +247,7 @@ void LoadProgram(struct Machine *m, char *prog, char **args, char **vars)
     int n;
     struct stat sbuf;
     extern char *symtab;
-    extern long Tsegment, Dsegment;
+    extern u16 Tsegment, Dsegment;
 
     int ac = 0;
     for (char **av = args; *av; av++) ac++;
@@ -258,8 +258,10 @@ void LoadProgram(struct Machine *m, char *prog, char **args, char **vars)
         if (symtab) {
             sym_read_symbols(&exe8086, symtab);
             exe8086.textseg = Tsegment;
-            exe8086.ftextseg = 0;
             exe8086.dataseg = Dsegment;
+            exe8086.aout.tseg = 65536;  // FIXME guessed for ELKS kernel
+            m->system->codestart = Tsegment << 4;
+            m->system->codesize = exe8086.aout.tseg;
         }
     } else if (endswith(prog, ".exe")) {
         loadExecutableDOS(&exe8086, prog, ac, args, vars);
@@ -267,13 +269,14 @@ void LoadProgram(struct Machine *m, char *prog, char **args, char **vars)
         loadExecutableElks(&exe8086, prog, ac, args, vars);
         sym_read_exe_symbols(&exe8086, prog);
         exe8086.textseg = cs();
+        exe8086.dataseg = ds();
+        m->system->codestart = cs() << 4;
+        m->system->codesize = exe8086.aout.tseg;
     }
 
     copyRegistersFromVM(m);
     m->cs.base = (m->cs.sel = cs()) << 4;
     m->ip = getIP();
-    m->system->codestart = m->ip;
-    m->system->codesize = sbuf.st_size - exe8086.aout.hlen;
     initExecute();
 }
 

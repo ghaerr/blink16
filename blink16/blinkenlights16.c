@@ -271,7 +271,12 @@ struct History {
 };
 
 struct ProfSym {
+#if BLINK16
+  char *name;
+  u16 addr;
+#else
   int sym;  // dis->syms.p[sym]
+#endif
   unsigned long hits;
 };
 
@@ -293,8 +298,8 @@ static const char kRegisterNames[3][16][4] = {
 extern char **environ;
 
 char *symtab;       // -S
-long Tsegment;      // -T
-long Dsegment;      // -D
+u16 Tsegment;       // -T
+u16 Dsegment;       // -D
 
 static bool belay;
 static bool react;
@@ -538,13 +543,14 @@ static void SortProfSyms(void) {
   qsort(profsyms.p, profsyms.i, sizeof(*profsyms.p), CompareProfSyms);
 }
 
-static int AddProfSym(int sym, unsigned long hits) {
+static int AddProfSym(char *sym, u16 addr, unsigned long hits) {
   if (!hits) return -1;
   if (profsyms.i == profsyms.n) {
     profsyms.p = (struct ProfSym *)realloc(profsyms.p,
                                            ++profsyms.n * sizeof(*profsyms.p));
   }
-  profsyms.p[profsyms.i].sym = sym;
+  profsyms.p[profsyms.i].name = sym;
+  profsyms.p[profsyms.i].addr = addr;
   profsyms.p[profsyms.i].hits = hits;
   return profsyms.i++;
 }
@@ -553,6 +559,7 @@ static unsigned long TallyHits(i64 addr, int size) {
   i64 pc;
   unsigned long hits;
   for (hits = 0, pc = addr; pc < addr + size; ++pc) {
+    unassert(pc - m->system->codestart < m->system->codesize); // FIXME remove
     hits += ophits[pc - m->system->codestart];
   }
   return hits;
@@ -561,8 +568,27 @@ static unsigned long TallyHits(i64 addr, int size) {
 static void GenerateProfile(void) {
   int sym;
   profsyms.i = 0;
+  if (!ophits) return;  // FIXME PR
+  if (m->cs.sel != m->system->codestart >> 4) return;
   profsyms.toto = TallyHits(m->system->codestart, m->system->codesize);
-  if (!ophits) return;
+#if BLINK16
+  u16 size, addr;
+  unsigned char *p, *q;
+  char *name;
+  static char *pn;
+  static char names[32768]; // current max symtab size
+  pn = names;
+  for (p = sym_next_text_entry(&exe8086, NULL); p; p = q) {
+    q = sym_next_text_entry(&exe8086, p);
+    addr = symAddr(p);
+    size = q? symAddr(q) - addr: exe8086.aout.tseg - addr;  // FIXME need __endtext sym?
+    name = strncpy(pn, symName(p), symLen(p));
+    pn += symLen(p);
+    *pn++ = '\0';
+    //LOGF("sym %s addr %04x size %d\n", name, (unsigned)addr, (int)size);
+    AddProfSym(name, addr, TallyHits(m->cs.base + addr, size));
+  }
+#else
   for (sym = 0; sym < dis->syms.i; ++sym) {
     if (dis->syms.p[sym].addr >= m->system->codestart &&
         dis->syms.p[sym].addr + dis->syms.p[sym].size <
@@ -570,6 +596,7 @@ static void GenerateProfile(void) {
       AddProfSym(sym, TallyHits(dis->syms.p[sym].addr, dis->syms.p[sym].size));
     }
   }
+#endif
   SortProfSyms();
   profsyms.i = MIN(50, profsyms.i);
 }
@@ -579,9 +606,8 @@ static void DrawProfile(struct Panel *p) {
   char line[256];
   GenerateProfile();
   for (i = 0; i < profsyms.i; ++i) {
-    snprintf(line, sizeof(line), "%7.3f%% %s",
-             (double)profsyms.p[i].hits / profsyms.toto * 100,
-             dis->syms.stab + dis->syms.p[profsyms.p[i].sym].name);
+    snprintf(line, sizeof(line), "%04x %7.3f%% %s", profsyms.p[i].addr,
+        (double)profsyms.p[i].hits / profsyms.toto * 100, profsyms.p[i].name);
     AppendPanel(p, i - framesstart, line);
   }
 }
@@ -2180,16 +2206,12 @@ static void Redraw(bool force) {
   DrawHr(&pan.readhr, "READ");
   DrawHr(&pan.writehr, "WRITE");
   DrawHr(&pan.stackhr, "STACK");
-#if !BLINK16
-  DrawMaps(&pan.maps);
+  //DrawMaps(&pan.maps);
   if (showprofile) {
     DrawProfile(&pan.frames);
   } else {
     DrawFrames(&pan.frames);
   }
-#else
-  DrawFrames(&pan.frames);
-#endif
   DrawBreakpoints(&pan.breakpoints);
   DrawMemory(&pan.code, &codeview, GetPc(m), GetPc(m) + m->xedd->length);
   DrawMemory(&pan.readdata, &readview, readaddr, readaddr + readsize);
@@ -3590,6 +3612,12 @@ static void EnterWatchpoint(long bp) {
   tuimode = true;
 }
 
+static void StartOp_Tui(P) {
+  ++cycle;
+  ProfileOp(m, m->ip /* - m->oplen */);
+}
+#endif
+
 static void ProfileOp(struct Machine *m, u64 pc) {
   if (ophits &&                      //
       pc >= m->system->codestart &&  //
@@ -3597,12 +3625,6 @@ static void ProfileOp(struct Machine *m, u64 pc) {
     ++ophits[pc - m->system->codestart];
   }
 }
-
-static void StartOp_Tui(P) {
-  ++cycle;
-  ProfileOp(m, m->ip /* - m->oplen */);
-}
-#endif
 
 static void Execute(void) {
   u64 c;
@@ -3613,7 +3635,7 @@ static void Execute(void) {
   ExecuteInstruction(m);
   if (c == cycle) {
     ++cycle;
-    //ProfileOp(m, GetPc(m) /* - m->oplen */);
+    ProfileOp(m, GetPc(m) /* - m->oplen */);
   }
 }
 
@@ -3983,9 +4005,14 @@ int VirtualMachine(int argc, char *argv[]) {
     action = 0;
     LoadProgram(m, codepath, argv + optind_ - 1, environ);
     if (m->system->codesize) {
-      //ophits = (unsigned long *)AllocateBig(
-          //m->system->codesize * sizeof(unsigned long), PROT_READ | PROT_WRITE,
-          //MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+#if BLINK16
+      ophits = (unsigned long *)calloc(1, m->system->codesize * sizeof(unsigned long));
+      unassert(ophits);
+#else
+      ophits = (unsigned long *)AllocateBig(
+          m->system->codesize * sizeof(unsigned long), PROT_READ | PROT_WRITE,
+          MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+#endif
     }
     ScrollMemoryViews();
     //AddStdFd(&m->system->fds, 0);
@@ -4060,6 +4087,7 @@ static void OnSigSegv(int sig, siginfo_t *si, void *uc) {
   //LOGF("SIGSEGV AT ADDRESS %" PRIx64 " (OR %p)\n\t%s", g_machine->faultaddr,
        //si->si_addr, GetBacktrace(g_machine));
   //if (!react) DeliverSignalToUser(g_machine, SIGSEGV_LINUX);
+  unassert(0);  // FIXME don't send SIGSEGV to emulator
   siglongjmp(g_machine->onhalt, kMachineSegmentationFault);
 }
 
@@ -4105,7 +4133,11 @@ int main(int argc, char *argv[]) {
                           1ull << (SIGWINCH_LINUX - 1);  //
   if (optind_ == argc) PrintUsage(48, stderr);
   rc = VirtualMachine(argc, argv);
-  //FreeBig(ophits, m->system->codesize * sizeof(unsigned long));
+#if BLINK16
+  if (ophits) free(ophits);
+#else
+  FreeBig(ophits, m->system->codesize * sizeof(unsigned long));
+#endif
   //FreeMachine(m);
   ClearHistory();
   FreePanels();

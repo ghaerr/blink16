@@ -111,6 +111,19 @@ static int noinstrument type_data(unsigned char *p)
             p[TYPE] == 'V');
 }
 
+// FIXME rewrite as iterator function
+unsigned char * noinstrument sym_next_text_entry(struct exe *e, unsigned char *entry)
+{
+    unsigned char *p = entry? symNext(entry): e->syms;
+    for ( ; p; p = symNext(p)) {
+        if (type_text(p))
+            return p;
+        if (entry)      /* done after last text entry */
+            break;
+     }
+     return 0;
+}
+
 /* map .text address to function start address */
 addr_t  noinstrument sym_fn_start_address(struct exe *e, addr_t addr)
 {
@@ -119,11 +132,11 @@ addr_t  noinstrument sym_fn_start_address(struct exe *e, addr_t addr)
     if (!e->syms) return -1;
 
     lastp = e->syms;
-    for (p = next(lastp); ; lastp = p, p = next(p)) {
-        if (!type_text(p) || ((unsigned short)addr < *(unsigned short *)(&p[ADDR])))
+    for (p = symNext(lastp); ; lastp = p, p = symNext(p)) {
+        if (!type_text(p) || ((unsigned short)addr < symAddr(p)))
             break;
     }
-    return *(unsigned short *)(&lastp[ADDR]);
+    return symAddr(lastp);
 }
 
 /* convert address to symbol string */
@@ -141,15 +154,15 @@ hex:
 
     lastp = e->syms;
     while (!istype(lastp)) {
-        lastp = next(lastp);
+        lastp = symNext(lastp);
         if (!lastp[TYPE])
             goto hex;
     }
-    for (p = next(lastp); ; lastp = p, p = next(p)) {
-        if (!istype(p) || ((unsigned short)addr < *(unsigned short *)(&p[ADDR])))
+    for (p = symNext(lastp); ; lastp = p, p = symNext(p)) {
+        if (!istype(p) || ((unsigned short)addr < symAddr(p)))
             break;
     }
-    int lastaddr = *(unsigned short *)(&lastp[ADDR]);
+    int lastaddr = symAddr(lastp);
     if (exact && addr - lastaddr) {
         sprintf(buf, "%.*s+%xh", lastp[SYMLEN], lastp+SYMBOL,
                                 (unsigned int)addr - lastaddr);
