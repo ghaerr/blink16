@@ -3625,7 +3625,7 @@ static void StartOp_Tui(P) {
 }
 #endif
 
-static void ProfileOp(struct Machine *m, u64 pc) {
+void ProfileOp(struct Machine *m, u64 pc) {
   if (ophits &&                      //
       pc >= m->system->codestart &&  //
       pc < m->system->codestart + m->system->codesize) {

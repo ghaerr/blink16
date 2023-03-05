@@ -339,11 +339,17 @@ void LoadInstruction(struct Machine *m, u64 pc)
 
 void ExecuteInstruction(struct Machine *m)
 {
+    bool repeating;
+    extern void ProfileOp(struct Machine *m, u64 pc);
+
     //disasm(&dis8086, cs(), m->ip, nextbyte_mem, ds(), 0);
     //m->ip += dis8086.oplen;
     do {
         executeInstruction();
-    } while (isRepeating() && !f_showreps);
+        repeating = isRepeating() && !f_showreps;
+        if (repeating)
+            ProfileOp(m, GetPc(m));
+    } while (repeating);
     m->oplen = getIP() - m->ip;
     if (!isRepeating())
         m->ip = getIP();
