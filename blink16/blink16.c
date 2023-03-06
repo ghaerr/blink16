@@ -206,9 +206,12 @@ bool canHandleInterrupt(struct exe *e, int intno)
     case 3:         // HW INT 3
     case 4:         // HW INTO
     case 0x10:      // BIOS conout
+    case 0x11:      // BIOS equip flags
     case 0x12:      // BIOS memsize
     case 0x13:      // BIOS disk i/o
     case 0x16:      // BIOS conin
+    case 0x15:      // BIOS sysconf
+    case 0x1a:      // BIOS RTC
         return 1;
     default:
         return 0;

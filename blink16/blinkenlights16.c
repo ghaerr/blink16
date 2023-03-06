@@ -2171,7 +2171,8 @@ static void Redraw(bool force) {
   size_t size;
   double execsecs;
   struct timespec start_draw, end_draw;
-  if (!tuimode) return;
+  //if (!tuimode) return;   // FIXME PR?
+  if (displayexec) return;
   if (g_history.viewing) {
     ShowHistory();
     return;
@@ -2991,9 +2992,11 @@ static void OnVidyaService(void) {
       break;
     case 0x09:
       OnVidyaServiceWriteCharacter();
+      Redraw(true);
       break;
     case 0x0E:
       OnVidyaServiceTeletypeOutput();
+      Redraw(true);
       break;
     case 0x0F:
       OnVidyaServiceGetMode();
@@ -3009,10 +3012,10 @@ static void OnKeyboardServiceReadKeyPress(void) {
   static char buf[32];
   static size_t pending;
   LOGF("OnKeyboardServiceReadKeyPress");
-  if (!tuimode && !displayexec) {
-    tuimode = true;
-    action |= CONTINUE;
-  }
+  //if (!tuimode && !displayexec) {
+    //tuimode = true;       // FIXME PR
+    //action |= CONTINUE;
+  //}
   pty->conf |= kPtyBlinkcursor;
   if (!pending) {
 again:
@@ -3142,6 +3145,9 @@ bool OnHalt2(int interrupt) {
       return true;
     case 0x10:
       OnVidyaService();
+      return true;
+    case 0x11:
+      Put16(m->ax, 0x0021); // IPL 1 floppy, CGA 80x25
       return true;
     case 0x15:
       OnInt15h();
@@ -3481,8 +3487,8 @@ static void HandleKeyboard(const char *k) {
     CASE('n', OnNext());
     CASE('f', OnFinish());
     CASE('c', OnContinueTui());
-    CASE('C', displayexec = 0; OnContinueExec());
-    CASE('D', displayexec = 1; OnContinueExec());
+    CASE('C', displayexec = false; OnContinueExec());
+    CASE('D', displayexec = true; OnContinueExec());
     CASE('R', OnRestart());
     //CASE('x', OnXmmDisp());
     //CASE('t', OnXmmType());
@@ -3720,6 +3726,7 @@ static void Exec(void) {
             LOGF("REACT");
             action &= ~(INT | STEP | FINISH | NEXT);
             tuimode = true;
+            displayexec = false;
             break;  // FIXME PR
           } else {
             action &= ~INT;
@@ -4051,6 +4058,8 @@ int VirtualMachine(int argc, char *argv[]) {
         Tui();
       }
     } while (!(action & (RESTART | EXIT)));
+    if (action & RESTART)
+      PtyWrite(pty, "\e[H\e[J", 6);
   } while (action & RESTART);
 #if BLINK16
   if (m->metal) {

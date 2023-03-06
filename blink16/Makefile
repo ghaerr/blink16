@@ -50,5 +50,8 @@ blink16: $(BLINK16_SOURCE) $(BLINK_SOURCE)
 elks: blink16
 	./blink16 -S system.sym -T 00d0 -D 0c39 -b _start -b mount_root -b 2d00:0000 fd1440.img
 
+dos: blink16
+	./blink16 freedos.img
+
 clean:
 	rm -f blink16
