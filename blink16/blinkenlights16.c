@@ -307,10 +307,11 @@ bool tuimode;
 static bool alarmed;
 static bool natural;
 static bool mousemode;
+static bool displayexec;        /* 'D' -> DrawDisplayOnly during Exec() */
+static bool redrawcycle;        /* 'E' -> redraw every 16k instructions */
 static bool showhighsse;
 static bool showprofile;
 static bool readingteletype;
-static bool displayexec;    /* 'D' -> DrawDisplayOnly during Exec() */
 
 static int tyn;
 static int txn;
@@ -1906,6 +1907,8 @@ static void DrawFrames(struct Panel *p) {
     //name = sym != -1 ? dis->syms.stab + dis->syms.p[sym].name : "UNKNOWN";
     int flag = getFunctionPushCount(fn);
     int prev = flag;
+    if (addr == 0)
+      break;
     s = line;
     s = printStackLine(s, i-2, addr, fn, flag);
     AppendPanel(p, i - framesstart, line);
@@ -3487,8 +3490,9 @@ static void HandleKeyboard(const char *k) {
     CASE('n', OnNext());
     CASE('f', OnFinish());
     CASE('c', OnContinueTui());
-    CASE('C', displayexec = false; OnContinueExec());
-    CASE('D', displayexec = true; OnContinueExec());
+    CASE('C', displayexec = false; redrawcycle = false; OnContinueExec());
+    CASE('D', displayexec = true;  redrawcycle = false; OnContinueExec());
+    CASE('E', displayexec = false; redrawcycle = true;  OnContinueExec());
     CASE('R', OnRestart());
     //CASE('x', OnXmmDisp());
     //CASE('t', OnXmmType());
@@ -3650,6 +3654,8 @@ static void Execute(void) {
     ++cycle;
     ProfileOp(m, GetPc(m) /* - m->oplen */);
   }
+  if (redrawcycle && (cycle & 0x3FFF) == 0)
+    Redraw(false);
 }
 
 static void Exec(void) {
