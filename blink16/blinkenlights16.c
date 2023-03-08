@@ -1290,9 +1290,11 @@ static i64 Disassemble(void) {
   i64 lines, ip;
   lines = pan.disassembly.bottom - pan.disassembly.top * 2;
   ip = m->ip;
-  int fn = sym_fn_start_address(&exe8086, ip);  // FIXME 'int' required not i64
-  if (fn != -1 && ip - fn < 48) {
-    ip = fn;
+  if (Tsegment && m->cs.sel == Tsegment) {          // FIXME symbols require seg:off
+    int fn = sym_fn_start_address(&exe8086, ip);    // FIXME 'int' required not i64
+    if (fn != -1 && ip - fn < 48) {
+      ip = fn;
+    }
   }
   if (Dis(dis, m, GetPc(m), ip, lines) != -1) {
     return DisFind(dis, GetPc(m));
