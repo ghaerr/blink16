@@ -46,12 +46,26 @@ all: blink16
 blink16: $(BLINK16_SOURCE) $(BLINK_SOURCE)
 	gcc -DBLINK16=1 -DNOJIT=1 -I.. -Os -o $@ $^ -lz -lm
 
+# boot ELKS
 # the -T (.text) and -D (.data) parameters are taken from the ELKS boot screen
 elks: blink16
 	./blink16 -S system.sym -T 00d0 -D 0c39 -b _start -b mount_root -b 2d00:0000 fd1440.img
 
-dos: blink16
+# run ELKS banner program
+banner: blink16
+	./blink16 banner "ELKS"
+
+# boot FreeDOS
+freedos: blink16
 	./blink16 freedos.img
+
+# run DOS .exe file
+dosexe: blink16
+	./blink16 test.exe
+
+# run DOS .com file
+doscom: blink16
+	./blink16 hello.com
 
 clean:
 	rm -f blink16

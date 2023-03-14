@@ -266,7 +266,7 @@ void LoadProgram(struct Machine *m, char *prog, char **args, char **vars)
             m->system->codestart = Tsegment << 4;
             m->system->codesize = exe8086.aout.tseg;
         }
-    } else if (endswith(prog, ".exe")) {
+    } else if (endswith(prog, ".exe") || endswith(prog, ".com")) {
         loadExecutableDOS(&exe8086, prog, ac, args, vars);
     } else {
         loadExecutableElks(&exe8086, prog, ac, args, vars);

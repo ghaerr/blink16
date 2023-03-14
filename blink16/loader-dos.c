@@ -98,6 +98,7 @@ static void load_bios_values(void)
 
 void loadExecutableDOS(struct exe *e, const char *path, int argc, char **argv, char **envp)
 {
+    int comfile = 0;
     struct stat sbuf;
 
     int fd = open(path, O_RDONLY);
@@ -106,9 +107,14 @@ void loadExecutableDOS(struct exe *e, const char *path, int argc, char **argv, c
     if (fstat(fd, &sbuf) < 0)
         loadError("Can't stat %s\n", path);
     size_t filesize = sbuf.st_size;
+    char *p = strrchr(path, '.');
+    if (p)
+        comfile = !strncmp(p, ".com", 5);
 
     loadSegment = 0x1000;
     int loadOffset = loadSegment << 4;
+    if (comfile)
+        loadOffset += 0x0100;
     if (filesize > RAMSIZE - loadOffset)
         loadError("Not enough memory to load %s, needs %d bytes have %d\n",
             path, filesize, RAMSIZE);
@@ -118,7 +124,7 @@ void loadExecutableDOS(struct exe *e, const char *path, int argc, char **argv, c
 
     write_environ(argc, argv, envp);
     struct image_dos_header *hdr = (struct image_dos_header *)&ram[loadOffset];
-    if (filesize >= 2 && hdr->e_magic == DOSMAGIC) {  // .exe file?
+    if (!comfile && filesize >= 2 && hdr->e_magic == DOSMAGIC) {  // .exe file?
         if (filesize < 0x21)
             loadError("%s is too short to be an .exe file\n", path);
         Word bytesInLastBlock = hdr->e_cblp;
@@ -154,7 +160,7 @@ void loadExecutableDOS(struct exe *e, const char *path, int argc, char **argv, c
         if (filesize > 0xff00)
             loadError("%s is too long to be a .com file\n", path);
         setES(loadSegment);
-        setShadowFlags(0, ES, filesize, fRead|fWrite);
+        setShadowFlags(0, ES, 0x10000, fRead|fWrite);
         setES(loadSegment - 0x10);
         setDS(loadSegment);
         setSS(loadSegment);
@@ -191,7 +197,7 @@ void loadExecutableDOS(struct exe *e, const char *path, int argc, char **argv, c
 
     if (f_verbose) printf("CS:IP %04x:%04x DS %04x SS:SP %04x:%04x\n",
         cs(), getIP(), ds(), ss(), sp());
-    setES(loadSegment - 0x10);
+    setES(loadSegment - 0x10);  // FIXME ES should not be used in load_bios_values
     setAX(0x0000);
     setBX(0x0000);
     setCX(0x0000);
