@@ -3126,7 +3126,7 @@ static void OnInt15h(void) {
 }
 
 static void OnInt12h(void) {
-  Put32(m->ax, 640);
+  Put16(m->ax, 640);
 }
 
 static void OnInt1Ah(void) {

@@ -19,6 +19,7 @@
 #include "syms.h"
 
 static unsigned char f_showreps = 0;    /* show each rep instruction cycle */
+static Word startip;
 static struct dis dis8086;
 struct exe exe8086;
 
@@ -240,7 +241,14 @@ bool handleInterrupt(struct exe *e, int intno)
         return 1;
     }
 
-    g_machine->ip = getIP();
+    switch (intno) {
+    case kMachineUndefinedInstruction:
+        g_machine->ip = startip;
+        break;
+    default:
+        g_machine->ip = getIP();
+        break;
+    }
     unassert(g_machine->canhalt);
     siglongjmp(g_machine->onhalt, intno);
 }
@@ -347,6 +355,7 @@ void ExecuteInstruction(struct Machine *m)
 
     //disasm(&dis8086, cs(), m->ip, nextbyte_mem, ds(), 0);
     //m->ip += dis8086.oplen;
+    startip = getIP();
     do {
         executeInstruction();
         repeating = isRepeating() && !f_showreps;

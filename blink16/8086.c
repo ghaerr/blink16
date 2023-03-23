@@ -639,9 +639,10 @@ void executeInstruction(void)
             case 0xd8: case 0xd9: case 0xda: case 0xdb:
             case 0xdc: case 0xdd: case 0xde: case 0xdf:  // escape
             case 0x0f:  // POP CS
+                handleInterrupt(ep, kMachineUndefinedInstruction);
+                break;
             case 0x9b:  // WAIT
             case 0xf0:  // LOCK
-                runtimeError("Invalid opcode %02x", opcode);
                 break;
             case 0xf4:  // HLT
                 break;  // FIXME possible interrupt?
