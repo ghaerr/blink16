@@ -347,7 +347,6 @@ static void decode(struct dis *d)
                 outs(d, "pop", REGOP);
                 break;
             case 0x60: case 0x61: case 0x62: case 0x63:
-            case 0x64: case 0x65: case 0x66: case 0x67:
             case 0x68: case 0x69: case 0x6a: case 0x6b:
             case 0x6c: case 0x6d: case 0x6e: case 0x6f:
             case 0xc0: case 0xc1: case 0xc8: case 0xc9:  // invalid
@@ -356,6 +355,18 @@ static void decode(struct dis *d)
             case 0xdc: case 0xdd: case 0xde: case 0xdf:  // escape
             case 0x0f:  // POP CS
                 outs(d, "???", 0);
+                break;
+            case 0x64:  // FS
+                outs(d, ".386 fs", 0);
+                break;
+            case 0x65:  // GS
+                outs(d, ".386 gs", 0);
+                break;
+            case 0x66:  // DATA32
+                outs(d, ".386 data32", 0);
+                break;
+            case 0x67:  // ADDR32
+                outs(d, ".386 addr32", 0);
                 break;
             case 0x70: case 0x71: case 0x72: case 0x73:
             case 0x74: case 0x75: case 0x76: case 0x77:

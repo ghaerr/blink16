@@ -631,7 +631,10 @@ void executeInstruction(void)
                 setRW(pop());
                 break;
             case 0x60: case 0x61: case 0x62: case 0x63:
-            case 0x64: case 0x65: case 0x66: case 0x67:
+            case 0x64:  // FS
+            case 0x65:  // GS
+            case 0x66:  // DATA32
+            case 0x67:  // ADDR32
             case 0x68: case 0x69: case 0x6a: case 0x6b:
             case 0x6c: case 0x6d: case 0x6e: case 0x6f:
             case 0xc0: case 0xc1: case 0xc8: case 0xc9:  // invalid
