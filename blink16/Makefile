@@ -14,6 +14,7 @@ BLINK16_SOURCE = \
     loader-dos.c                \
     syscall-dos.c               \
     loader-bin.c                \
+    wcwidth.c                   \
 
 BLINK_SOURCE = \
     ../blink/commandv.c                  \
